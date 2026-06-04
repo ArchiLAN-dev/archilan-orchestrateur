@@ -1,0 +1,17 @@
+# Binaries
+/orchestrateur
+/orchestrateur.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test / coverage
+*.test
+*.out
+coverage.html
+
+# Env
+.env
+*.env.local
