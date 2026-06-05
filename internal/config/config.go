@@ -31,6 +31,7 @@ type Config struct {
 	MinioUseSSL         bool
 	MinioBucketApworlds string
 	MinioBucketSessions string
+	DockerGID           string // GID of the docker group on the host (for bridge socket access)
 
 	GenerationTimeout time.Duration // default 10min
 	LaunchTimeout     time.Duration // default 2min
@@ -61,6 +62,7 @@ func Load() *Config {
 		MinioUseSSL:         envBool("MINIO_USE_SSL", false),
 		MinioBucketApworlds: env("MINIO_BUCKET_APWORLDS", "apworlds"),
 		MinioBucketSessions: env("MINIO_BUCKET_SESSIONS", "sessions"),
+		DockerGID:           env("DOCKER_GID", ""),
 
 		GenerationTimeout: envDuration("GENERATION_TIMEOUT", 600),
 		LaunchTimeout:     envDuration("LAUNCH_TIMEOUT", 120),

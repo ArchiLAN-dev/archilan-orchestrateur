@@ -161,7 +161,7 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 				fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID),
 				"/var/run/docker.sock:/var/run/docker.sock",
 			},
-			GroupAdd: []string{"0"}, // gives bridge user access to the docker socket (root:root 660)
+			GroupAdd: c.dockerGroupAdd(),
 		},
 		NetworkingConfig: networkingConfig{
 			EndpointsConfig: map[string]struct{}{
@@ -844,4 +844,14 @@ func (c *Client) WatchEvents(ctx context.Context) (<-chan Event, <-chan error) {
 	}()
 
 	return out, errc
+}
+
+// dockerGroupAdd returns the GroupAdd slice to pass to bridge containers.
+// If DOCKER_GID is set, it uses that GID so the bridge can access /var/run/docker.sock.
+// Falls back to "0" (root group) for backwards compatibility.
+func (c *Client) dockerGroupAdd() []string {
+	if c.cfg.DockerGID != "" {
+		return []string{c.cfg.DockerGID}
+	}
+	return []string{"0"}
 }
