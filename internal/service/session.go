@@ -108,11 +108,31 @@ func (s *Service) runGeneration(sessionID, adminPassword string, tarData *bytes.
 	if err := s.db.UpdateSessionGenerated(sessionID, outputFile); err != nil {
 		s.log.Error("runGeneration: UpdateSessionGenerated failed", "session_id", sessionID, "err", err)
 	}
+
+	// Persist the generated output to durable storage (MinIO) so it can be reused
+	// per player via launch-from-file. A copy/upload failure is fatal to the run: we
+	// must not advertise a session as generated without a retrievable artifact.
+	outputKey := sessionID + "/output/" + outputFile
+	data, err := s.docker.CopyOutputFromVolume(ctx, sessionID, outputFile)
+	if err != nil {
+		s.log.Error("runGeneration: CopyOutputFromVolume failed", "session_id", sessionID, "err", err)
+		_ = s.db.UpdateSessionCrashed(sessionID)
+		s.webhook.Send(ctx, webhook.Payload{Event: "session.crashed", SessionID: sessionID, Error: err.Error()})
+		return
+	}
+	if err := s.storage.UploadSessionOutput(ctx, sessionID, outputFile, data); err != nil {
+		s.log.Error("runGeneration: UploadSessionOutput failed", "session_id", sessionID, "err", err)
+		_ = s.db.UpdateSessionCrashed(sessionID)
+		s.webhook.Send(ctx, webhook.Payload{Event: "session.crashed", SessionID: sessionID, Error: err.Error()})
+		return
+	}
+
 	s.webhook.Send(ctx, webhook.Payload{
 		Event:     "session.generated",
 		SessionID: sessionID,
+		OutputKey: outputKey,
 	})
-	s.log.Info("generation complete", "session_id", sessionID, "output_file", outputFile)
+	s.log.Info("generation complete", "session_id", sessionID, "output_file", outputFile, "output_key", outputKey)
 }
 
 // Launch starts an async session launch. The session must be in the "generated" state.

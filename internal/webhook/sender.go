@@ -25,6 +25,7 @@ type Payload struct {
 	Port       int       `json:"port,omitempty"`       // AP server port (players connect here)
 	BridgePort int       `json:"bridgePort,omitempty"` // Bridge container port (internal)
 	Error      string    `json:"error,omitempty"`
+	OutputKey  string    `json:"outputKey,omitempty"` // MinIO key of the generated output (session.generated)
 	Timestamp  time.Time `json:"timestamp"`
 }
 
