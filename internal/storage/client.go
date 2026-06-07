@@ -130,6 +130,15 @@ func (c *Client) UploadSessionYaml(ctx context.Context, sessionID, filename stri
 	return err
 }
 
+// UploadSessionOutput stores a generated multiworld output at
+// sessions/{sessionId}/output/{filename} so it can be reused (launch-from-file).
+func (c *Client) UploadSessionOutput(ctx context.Context, sessionID, filename string, data []byte) error {
+	_, err := c.mc.PutObject(ctx, c.cfg.BucketSessions, sessionID+"/output/"+filename,
+		bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: "application/octet-stream"})
+	return err
+}
+
 // UploadManifest stores the session manifest at sessions/{sessionId}/manifest.json.
 func (c *Client) UploadManifest(ctx context.Context, sessionID string, manifest *Manifest) error {
 	data, err := json.Marshal(manifest)
