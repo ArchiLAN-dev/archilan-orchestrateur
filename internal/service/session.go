@@ -24,6 +24,7 @@ import (
 var (
 	ErrAlreadyInProgress = errors.New("session already in progress")
 	ErrSessionNotReady   = errors.New("session not ready")
+	ErrInvalidMode       = errors.New("invalid release/collect mode")
 )
 
 // GenerateRequest carries the parameters for a multiworld generation.
@@ -38,6 +39,23 @@ type LaunchRequest struct {
 	SessionID      string
 	ServerPassword string
 	AdminPassword  string
+	// ReleaseMode / CollectMode override the AP server's !release / !collect policy
+	// for this session. Empty means "use the launch script default" (disabled), which
+	// keeps weekly runs from auto-releasing/collecting items on goal. Valid non-empty
+	// values: disabled, enabled, goal, auto, auto-enabled.
+	ReleaseMode string
+	CollectMode string
+}
+
+// validAPMode reports whether a release/collect mode value is accepted. The empty
+// string is allowed and means "don't pass the flag — let the AP launch script default".
+func validAPMode(mode string) bool {
+	switch mode {
+	case "", "disabled", "enabled", "goal", "auto", "auto-enabled":
+		return true
+	default:
+		return false
+	}
 }
 
 // Generate starts an async multiworld generation for the given session.
@@ -277,6 +295,9 @@ func (s *Service) Launch(ctx context.Context, req LaunchRequest) error {
 	if sess.Status != "generated" {
 		return ErrSessionNotReady
 	}
+	if !validAPMode(req.ReleaseMode) || !validAPMode(req.CollectMode) {
+		return ErrInvalidMode
+	}
 
 	bridgePort, err := s.pool.Acquire(req.SessionID)
 	if err != nil {
@@ -290,11 +311,11 @@ func (s *Service) Launch(ctx context.Context, req LaunchRequest) error {
 		return fmt.Errorf("update session launching: %w", err)
 	}
 
-	go s.startSession(req.SessionID, bridgePort, apPort, req.ServerPassword, req.AdminPassword)
+	go s.startSession(req.SessionID, bridgePort, apPort, req.ServerPassword, req.AdminPassword, req.ReleaseMode, req.CollectMode)
 	return nil
 }
 
-func (s *Service) startSession(sessionID string, bridgePort, apPort int, serverPassword, adminPassword string) {
+func (s *Service) startSession(sessionID string, bridgePort, apPort int, serverPassword, adminPassword, releaseMode, collectMode string) {
 	ctx := context.Background()
 
 	crash := func(errMsg string) {
@@ -316,6 +337,8 @@ func (s *Service) startSession(sessionID string, bridgePort, apPort int, serverP
 		AdminPassword:  adminPassword,
 		APImage:        s.cfg.APImage,
 		BridgeNetwork:  s.cfg.BridgeNetwork,
+		ReleaseMode:    releaseMode,
+		CollectMode:    collectMode,
 	})
 	if err != nil {
 		crash(fmt.Sprintf("create ap server: %s", err))
