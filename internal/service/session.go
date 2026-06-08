@@ -126,9 +126,9 @@ func (s *Service) runGeneration(sessionID, adminPassword string, tarData *bytes.
 		s.webhook.Send(ctx, webhook.Payload{Event: "session.crashed", SessionID: sessionID, Error: err.Error()})
 		return
 	}
-	zipData, err := tarToZip(dirTar)
+	zipData, err := buildOutputArtifact(dirTar)
 	if err != nil {
-		s.log.Error("runGeneration: tarToZip failed", "session_id", sessionID, "err", err)
+		s.log.Error("runGeneration: buildOutputArtifact failed", "session_id", sessionID, "err", err)
 		_ = s.db.UpdateSessionCrashed(sessionID)
 		s.webhook.Send(ctx, webhook.Payload{Event: "session.crashed", SessionID: sessionID, Error: err.Error()})
 		return
@@ -155,6 +155,40 @@ func isZipArtifact(filename string, data []byte) bool {
 		return true
 	}
 	return len(data) >= 4 && data[0] == 'P' && data[1] == 'K' && data[2] == 0x03 && data[3] == 0x04
+}
+
+// buildOutputArtifact turns the captured /data/output tar into the stored artifact zip.
+// If generation already produced a single bundle zip (AP_*.zip), that zip is itself the
+// flat archive of the real files (multidata, patches, spoiler), so it is stored as-is —
+// avoiding a confusing zip-in-zip. Otherwise the loose output files are packed flat.
+func buildOutputArtifact(tarData []byte) ([]byte, error) {
+	tr := tar.NewReader(bytes.NewReader(tarData))
+	var single []byte
+	count := 0
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		count++
+		if count == 1 && strings.HasSuffix(strings.ToLower(hdr.Name), ".zip") {
+			b, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, err
+			}
+			single = b
+		}
+	}
+	if count == 1 && single != nil {
+		return single, nil
+	}
+	return tarToZip(tarData)
 }
 
 // tarToZip converts a Docker archive tar of /data/output into a flat zip (the

@@ -176,3 +176,45 @@ func TestIsZipArtifact(t *testing.T) {
 		t.Error("expected .archipelago to not be detected as zip")
 	}
 }
+
+func TestBuildOutputArtifact_singleBundleZipReturnedAsIs(t *testing.T) {
+	bundle := []byte("PK\x03\x04 fake-ap-bundle-bytes")
+	var tb bytes.Buffer
+	tw := tar.NewWriter(&tb)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
+	_ = tw.WriteHeader(&tar.Header{Name: "output/AP_123.zip", Mode: 0644, Size: int64(len(bundle))})
+	_, _ = tw.Write(bundle)
+	_ = tw.Close()
+
+	art, err := buildOutputArtifact(tb.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(art, bundle) {
+		t.Errorf("expected the AP bundle zip returned as-is (%d bytes), got %d", len(bundle), len(art))
+	}
+}
+
+func TestBuildOutputArtifact_looseFilesZipped(t *testing.T) {
+	var tb bytes.Buffer
+	tw := tar.NewWriter(&tb)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
+	files := map[string]string{"AP_1.archipelago": "MD", "AP_1_P1.apemerald": "PATCH", "AP_1_Spoiler.txt": "SP"}
+	for n, c := range files {
+		_ = tw.WriteHeader(&tar.Header{Name: "output/" + n, Mode: 0644, Size: int64(len(c))})
+		_, _ = tw.Write([]byte(c))
+	}
+	_ = tw.Close()
+
+	art, err := buildOutputArtifact(tb.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(art), int64(len(art)))
+	if err != nil {
+		t.Fatalf("expected a valid flat zip: %v", err)
+	}
+	if len(zr.File) != len(files) {
+		t.Errorf("expected %d entries, got %d", len(files), len(zr.File))
+	}
+}
