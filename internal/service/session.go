@@ -1,10 +1,14 @@
 package service
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -109,18 +113,27 @@ func (s *Service) runGeneration(sessionID, adminPassword string, tarData *bytes.
 		s.log.Error("runGeneration: UpdateSessionGenerated failed", "session_id", sessionID, "err", err)
 	}
 
-	// Persist the generated output to durable storage (MinIO) so it can be reused
-	// per player via launch-from-file. A copy/upload failure is fatal to the run: we
-	// must not advertise a session as generated without a retrievable artifact.
-	outputKey := sessionID + "/output/" + outputFile
-	data, err := s.docker.CopyOutputFromVolume(ctx, sessionID, outputFile)
+	// Persist the WHOLE generated output (multidata, per-player patches, spoiler) to
+	// durable storage (MinIO) as a single zip, so it can be reused per player via
+	// launch-from-file and downloaded by admins. A copy/zip/upload failure is fatal to
+	// the run: we must not advertise a session as generated without a retrievable artifact.
+	const outputArchiveName = "archive.zip"
+	outputKey := sessionID + "/output/" + outputArchiveName
+	dirTar, err := s.docker.CopyOutputDirFromVolume(ctx, sessionID)
 	if err != nil {
-		s.log.Error("runGeneration: CopyOutputFromVolume failed", "session_id", sessionID, "err", err)
+		s.log.Error("runGeneration: CopyOutputDirFromVolume failed", "session_id", sessionID, "err", err)
 		_ = s.db.UpdateSessionCrashed(sessionID)
 		s.webhook.Send(ctx, webhook.Payload{Event: "session.crashed", SessionID: sessionID, Error: err.Error()})
 		return
 	}
-	if err := s.storage.UploadSessionOutput(ctx, sessionID, outputFile, data); err != nil {
+	zipData, err := tarToZip(dirTar)
+	if err != nil {
+		s.log.Error("runGeneration: tarToZip failed", "session_id", sessionID, "err", err)
+		_ = s.db.UpdateSessionCrashed(sessionID)
+		s.webhook.Send(ctx, webhook.Payload{Event: "session.crashed", SessionID: sessionID, Error: err.Error()})
+		return
+	}
+	if err := s.storage.UploadSessionOutput(ctx, sessionID, outputArchiveName, zipData); err != nil {
 		s.log.Error("runGeneration: UploadSessionOutput failed", "session_id", sessionID, "err", err)
 		_ = s.db.UpdateSessionCrashed(sessionID)
 		s.webhook.Send(ctx, webhook.Payload{Event: "session.crashed", SessionID: sessionID, Error: err.Error()})
@@ -133,6 +146,89 @@ func (s *Service) runGeneration(sessionID, adminPassword string, tarData *bytes.
 		OutputKey: outputKey,
 	})
 	s.log.Info("generation complete", "session_id", sessionID, "output_file", outputFile, "output_key", outputKey)
+}
+
+// isZipArtifact reports whether a launch artifact is a zip (new full-output archive)
+// rather than a single legacy multidata file.
+func isZipArtifact(filename string, data []byte) bool {
+	if strings.HasSuffix(strings.ToLower(filename), ".zip") {
+		return true
+	}
+	return len(data) >= 4 && data[0] == 'P' && data[1] == 'K' && data[2] == 0x03 && data[3] == 0x04
+}
+
+// tarToZip converts a Docker archive tar of /data/output into a flat zip (the
+// "output/" prefix is stripped; directory entries are skipped).
+func tarToZip(tarData []byte) ([]byte, error) {
+	tr := tar.NewReader(bytes.NewReader(tarData))
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := strings.TrimPrefix(hdr.Name, "output/")
+		name = strings.TrimPrefix(name, "/")
+		if name == "" {
+			continue
+		}
+		w, err := zw.Create(name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.Copy(w, tr); err != nil { //nolint:gosec // bounded by generation output
+			return nil, err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// zipToOutputTar converts a flat zip back into a tar that restores its files under
+// /data/output when uploaded to the session volume.
+func zipToOutputTar(zipData []byte) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755}); err != nil {
+		return nil, err
+	}
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: "output/" + path.Base(f.Name), Mode: 0644, Size: int64(len(data))}); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write(data); err != nil {
+			return nil, err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // Launch starts an async session launch. The session must be in the "generated" state.
@@ -292,7 +388,18 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 		}
 	}
 
-	if err := s.docker.InjectFileToVolume(ctx, req.SessionID, filename, fileData); err != nil {
+	// Restore the generated output into /data/output. New runs ship the whole output
+	// directory as a zip (multidata + patches + spoiler); legacy runs shipped a single
+	// multidata file.
+	if isZipArtifact(filename, fileData) {
+		outTar, err := zipToOutputTar(fileData)
+		if err != nil {
+			return fmt.Errorf("unzip output: %w", err)
+		}
+		if err := s.docker.PutDataToVolume(ctx, req.SessionID, bytes.NewReader(outTar)); err != nil {
+			return fmt.Errorf("restore output to volume: %w", err)
+		}
+	} else if err := s.docker.InjectFileToVolume(ctx, req.SessionID, filename, fileData); err != nil {
 		return fmt.Errorf("inject file to volume: %w", err)
 	}
 
