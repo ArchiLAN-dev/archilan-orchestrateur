@@ -34,6 +34,8 @@ func writeSessionError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, ErrorResponse{Error: "already_in_progress"})
 	case errors.Is(err, service.ErrSessionNotReady):
 		writeJSON(w, http.StatusConflict, ErrorResponse{Error: "not_ready"})
+	case errors.Is(err, service.ErrInvalidMode):
+		writeError(w, http.StatusBadRequest, "invalid release/collect mode")
 	case errors.Is(err, service.ErrStorageNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "storage not configured")
 	default:
@@ -115,6 +117,8 @@ func handleLaunchSession(svc *service.Service) http.HandlerFunc {
 			SessionID:      sessionID,
 			ServerPassword: req.ServerPassword,
 			AdminPassword:  req.AdminPassword,
+			ReleaseMode:    req.ReleaseMode,
+			CollectMode:    req.CollectMode,
 		})
 		if err != nil {
 			writeSessionError(w, err)
@@ -135,6 +139,8 @@ func handleLaunchSession(svc *service.Service) http.HandlerFunc {
 // @Param       file           formData file   true  "The .archipelago or .zip game file"
 // @Param       adminPassword  formData string true  "Admin password"
 // @Param       serverPassword formData string false "Server password (optional)"
+// @Param       releaseMode    formData string false "AP !release policy: disabled|enabled|goal|auto|auto-enabled (default disabled)"
+// @Param       collectMode    formData string false "AP !collect policy: disabled|enabled|goal|auto|auto-enabled (default disabled)"
 // @Success     202
 // @Failure     400 {object} ErrorResponse
 // @Failure     500 {object} ErrorResponse
@@ -155,6 +161,8 @@ func handleLaunchSessionFromFile(svc *service.Service) http.HandlerFunc {
 			return
 		}
 		serverPassword := r.FormValue("serverPassword")
+		releaseMode := r.FormValue("releaseMode")
+		collectMode := r.FormValue("collectMode")
 
 		file, header, err := r.FormFile("file")
 		if err != nil {
@@ -173,6 +181,8 @@ func handleLaunchSessionFromFile(svc *service.Service) http.HandlerFunc {
 			SessionID:      sessionID,
 			ServerPassword: serverPassword,
 			AdminPassword:  adminPassword,
+			ReleaseMode:    releaseMode,
+			CollectMode:    collectMode,
 		}, fileData, header.Filename); err != nil {
 			writeSessionError(w, err)
 			return

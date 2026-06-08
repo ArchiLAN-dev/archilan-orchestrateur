@@ -632,6 +632,8 @@ type APServerCreateConfig struct {
 	AdminPassword  string // AP server admin password (enables !admin commands)
 	APImage        string
 	BridgeNetwork  string
+	ReleaseMode    string // optional !release policy; empty = AP launch-script default (disabled)
+	CollectMode    string // optional !collect policy; empty = AP launch-script default (disabled)
 }
 
 type createAPServerBody struct {
@@ -652,14 +654,24 @@ type apServerHostConfig struct {
 
 // CreateAPServer creates (but does not start) an AP server container for the given session.
 func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (string, error) {
+	env := []string{
+		fmt.Sprintf("PASSWORD=%s", cfg.ServerPassword),
+		fmt.Sprintf("SERVER_PASSWORD=%s", cfg.AdminPassword),
+		"ARCHIPELAGO_OUTPUT_DIR=/data/output",
+	}
+	// Only override the launch-script defaults when explicitly provided, so the
+	// script's own default (disabled) stands otherwise.
+	if cfg.ReleaseMode != "" {
+		env = append(env, fmt.Sprintf("RELEASE_MODE=%s", cfg.ReleaseMode))
+	}
+	if cfg.CollectMode != "" {
+		env = append(env, fmt.Sprintf("COLLECT_MODE=%s", cfg.CollectMode))
+	}
+
 	body := createAPServerBody{
 		Image: cfg.APImage,
 		Cmd:   []string{"/ap_server.sh"},
-		Env: []string{
-			fmt.Sprintf("PASSWORD=%s", cfg.ServerPassword),
-			fmt.Sprintf("SERVER_PASSWORD=%s", cfg.AdminPassword),
-			"ARCHIPELAGO_OUTPUT_DIR=/data/output",
-		},
+		Env:   env,
 		Labels: map[string]string{
 			managedLabel: "true",
 			sessionLabel: cfg.SessionID,

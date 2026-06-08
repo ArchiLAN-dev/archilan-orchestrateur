@@ -104,6 +104,10 @@ type GenerateSessionRequest struct {
 type LaunchSessionRequest struct {
 	ServerPassword string `json:"serverPassword,omitempty"`
 	AdminPassword  string `json:"adminPassword"`
+	// Optional AP server policies for this session. Empty = launch-script default
+	// (disabled). Valid: disabled, enabled, goal, auto, auto-enabled.
+	ReleaseMode string `json:"releaseMode,omitempty"`
+	CollectMode string `json:"collectMode,omitempty"`
 }
 
 // SlotOption is a randomizer option with required flag and current/default values.
