@@ -740,7 +740,12 @@ func (c *Client) InjectFileToVolume(ctx context.Context, sessionID, filename str
 	_, _ = tw.Write(data)
 	_ = tw.Close()
 
-	// Create a stopped one-shot container just to use PutArchive
+	return c.PutDataToVolume(ctx, sessionID, &tarBuf)
+}
+
+// PutDataToVolume uploads an arbitrary tar archive into the session volume at /data
+// via a stopped one-shot container (Docker copy-to-container), then removes it.
+func (c *Client) PutDataToVolume(ctx context.Context, sessionID string, tarData io.Reader) error {
 	type injectBody struct {
 		Image      string            `json:"Image"`
 		Labels     map[string]string `json:"Labels"`
@@ -757,23 +762,23 @@ func (c *Client) InjectFileToVolume(ctx context.Context, sessionID, filename str
 
 	resp, err := c.do(ctx, http.MethodPost, "/containers/create", body)
 	if err != nil {
-		return fmt.Errorf("inject file create: %w", err)
+		return fmt.Errorf("put data to volume create: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("inject file create: status %d: %s", resp.StatusCode, raw)
+		return fmt.Errorf("put data to volume create: status %d: %s", resp.StatusCode, raw)
 	}
 
 	var created createResponse
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		return fmt.Errorf("inject file decode: %w", err)
+		return fmt.Errorf("put data to volume decode: %w", err)
 	}
 	containerID := created.ID
 	defer func() { _ = c.Remove(ctx, containerID) }()
 
-	return c.putArchiveTo(ctx, containerID, "/data", &tarBuf)
+	return c.putArchiveTo(ctx, containerID, "/data", tarData)
 }
 
 // CopyOutputFromVolume reads /data/output/{filename} out of the session volume and
