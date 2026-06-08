@@ -1,6 +1,11 @@
 package service
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -91,5 +96,83 @@ func TestBuildPlayerYaml_emptyValues(t *testing.T) {
 	}
 	if !strings.Contains(out, "game: Luigi") {
 		t.Errorf("missing game field: %s", out)
+	}
+}
+
+func TestTarToZipAndBack_roundTrip(t *testing.T) {
+	// Build a Docker-style tar of /data/output with two files.
+	var tbuf bytes.Buffer
+	tw := tar.NewWriter(&tbuf)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
+	files := map[string]string{
+		"AP_42.archipelago":     "MULTIDATA",
+		"AP_42_P1_Jean.apemerald": "PATCHBYTES",
+		"AP_42_Spoiler.txt":     "SPOILER",
+	}
+	for name, content := range files {
+		_ = tw.WriteHeader(&tar.Header{Name: "output/" + name, Mode: 0644, Size: int64(len(content))})
+		_, _ = tw.Write([]byte(content))
+	}
+	_ = tw.Close()
+
+	// tar → zip (flat, no output/ prefix)
+	zipData, err := tarToZip(tbuf.Bytes())
+	if err != nil {
+		t.Fatalf("tarToZip: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	got := map[string]string{}
+	for _, f := range zr.File {
+		rc, _ := f.Open()
+		b, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		got[f.Name] = string(b)
+	}
+	for name, content := range files {
+		if got[name] != content {
+			t.Errorf("zip entry %q = %q, want %q", name, got[name], content)
+		}
+	}
+
+	// zip → output tar (entries under output/)
+	outTar, err := zipToOutputTar(zipData)
+	if err != nil {
+		t.Fatalf("zipToOutputTar: %v", err)
+	}
+	tr := tar.NewReader(bytes.NewReader(outTar))
+	gotTar := map[string]string{}
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar read: %v", err)
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		b, _ := io.ReadAll(tr)
+		gotTar[hdr.Name] = string(b)
+	}
+	for name, content := range files {
+		if gotTar["output/"+name] != content {
+			t.Errorf("tar entry output/%s = %q, want %q", name, gotTar["output/"+name], content)
+		}
+	}
+}
+
+func TestIsZipArtifact(t *testing.T) {
+	if !isZipArtifact("archive.zip", nil) {
+		t.Error("expected .zip filename to be detected as zip")
+	}
+	if !isZipArtifact("x", []byte{'P', 'K', 0x03, 0x04, 0x00}) {
+		t.Error("expected PK magic to be detected as zip")
+	}
+	if isZipArtifact("AP_42.archipelago", []byte("MULTIDATA")) {
+		t.Error("expected .archipelago to not be detected as zip")
 	}
 }

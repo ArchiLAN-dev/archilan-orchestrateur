@@ -781,10 +781,10 @@ func (c *Client) PutDataToVolume(ctx context.Context, sessionID string, tarData 
 	return c.putArchiveTo(ctx, containerID, "/data", tarData)
 }
 
-// CopyOutputFromVolume reads /data/output/{filename} out of the session volume and
-// returns its raw bytes. Mirrors InjectFileToVolume: a stopped one-shot container mounts
-// the volume, then Docker's copy-from-container (GET .../archive) streams a tar we extract.
-func (c *Client) CopyOutputFromVolume(ctx context.Context, sessionID, filename string) ([]byte, error) {
+// CopyOutputDirFromVolume returns the whole /data/output directory of the session
+// volume as a tar archive (entries prefixed with "output/"). Used to persist every
+// generated file (multidata, per-player patches, spoiler), not just one.
+func (c *Client) CopyOutputDirFromVolume(ctx context.Context, sessionID string) ([]byte, error) {
 	type copyBody struct {
 		Image      string            `json:"Image"`
 		Labels     map[string]string `json:"Labels"`
@@ -801,52 +801,33 @@ func (c *Client) CopyOutputFromVolume(ctx context.Context, sessionID, filename s
 
 	resp, err := c.do(ctx, http.MethodPost, "/containers/create", body)
 	if err != nil {
-		return nil, fmt.Errorf("copy output create: %w", err)
+		return nil, fmt.Errorf("copy output dir create: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("copy output create: status %d: %s", resp.StatusCode, raw)
+		return nil, fmt.Errorf("copy output dir create: status %d: %s", resp.StatusCode, raw)
 	}
 
 	var created createResponse
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		return nil, fmt.Errorf("copy output decode: %w", err)
+		return nil, fmt.Errorf("copy output dir decode: %w", err)
 	}
 	containerID := created.ID
 	defer func() { _ = c.Remove(ctx, containerID) }()
 
-	path := "/data/output/" + filename
 	archiveResp, err := c.do(ctx, http.MethodGet,
-		fmt.Sprintf("/containers/%s/archive?path=%s", containerID, url.QueryEscape(path)), nil)
+		fmt.Sprintf("/containers/%s/archive?path=%s", containerID, url.QueryEscape("/data/output")), nil)
 	if err != nil {
-		return nil, fmt.Errorf("copy output archive: %w", err)
+		return nil, fmt.Errorf("copy output dir archive: %w", err)
 	}
 	defer archiveResp.Body.Close()
 	if archiveResp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(archiveResp.Body)
-		return nil, fmt.Errorf("copy output archive: status %d: %s", archiveResp.StatusCode, raw)
+		return nil, fmt.Errorf("copy output dir archive: status %d: %s", archiveResp.StatusCode, raw)
 	}
 
-	tr := tar.NewReader(archiveResp.Body)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("copy output read tar: %w", err)
-		}
-		if hdr.Typeflag == tar.TypeReg {
-			data, err := io.ReadAll(tr)
-			if err != nil {
-				return nil, fmt.Errorf("copy output read entry: %w", err)
-			}
-			return data, nil
-		}
-	}
-
-	return nil, fmt.Errorf("copy output: file %q not found in volume", filename)
+	return io.ReadAll(archiveResp.Body)
 }
 
 // WaitForAddress probes addr via TCP every 2 seconds until it succeeds or timeout elapses.
