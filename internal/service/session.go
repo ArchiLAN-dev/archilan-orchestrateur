@@ -277,6 +277,21 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 		}
 	}
 
+	// Stage the session's yamls + worlds from MinIO into the volume so downstream
+	// tooling that rebuilds the world (reachability) finds /data/yamls and /data/worlds.
+	// The provided file is the pre-generated multidata — no generation is run here.
+	if s.storage != nil {
+		tarBuf, n, err := s.buildDataTar(ctx, req.SessionID)
+		if err != nil {
+			return fmt.Errorf("build data tar: %w", err)
+		}
+		if n > 0 {
+			if err := s.docker.PutDataToVolume(ctx, req.SessionID, tarBuf); err != nil {
+				return fmt.Errorf("stage data to volume: %w", err)
+			}
+		}
+	}
+
 	if err := s.docker.InjectFileToVolume(ctx, req.SessionID, filename, fileData); err != nil {
 		return fmt.Errorf("inject file to volume: %w", err)
 	}
