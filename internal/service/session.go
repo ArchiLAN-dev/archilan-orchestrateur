@@ -39,12 +39,17 @@ type LaunchRequest struct {
 	SessionID      string
 	ServerPassword string
 	AdminPassword  string
-	// ReleaseMode / CollectMode override the AP server's !release / !collect policy
-	// for this session. Empty means "use the launch script default" (disabled), which
-	// keeps weekly runs from auto-releasing/collecting items on goal. Valid non-empty
-	// values: disabled, enabled, goal, auto, auto-enabled.
-	ReleaseMode string
-	CollectMode string
+	// Optional AP server_options overrides for this session. Empty string / nil pointer
+	// means "use the launch-script default". Validated by validateServerOptions; see epic 27.
+	ReleaseMode         string // disabled|enabled|goal|auto|auto-enabled
+	CollectMode         string // disabled|enabled|goal|auto|auto-enabled
+	RemainingMode       string // enabled|disabled|goal
+	CountdownMode       string // enabled|disabled|auto
+	DisableItemCheat    *bool
+	HintCost            *int // 0..100
+	LocationCheckPoints *int // >= 0
+	AutoShutdown        *int // >= 0 (seconds; 0 = never)
+	Compatibility       *int // 0|1|2
 }
 
 // validAPMode reports whether a release/collect mode value is accepted. The empty
@@ -56,6 +61,41 @@ func validAPMode(mode string) bool {
 	default:
 		return false
 	}
+}
+
+func validRemainingMode(mode string) bool {
+	switch mode {
+	case "", "enabled", "disabled", "goal":
+		return true
+	default:
+		return false
+	}
+}
+
+func validCountdownMode(mode string) bool {
+	switch mode {
+	case "", "enabled", "disabled", "auto":
+		return true
+	default:
+		return false
+	}
+}
+
+func intInRange(v *int, min, max int) bool {
+	return v == nil || (*v >= min && *v <= max)
+}
+
+// validateServerOptions reports whether all optional server_options on the request are
+// well-formed. Nil/empty fields are always valid (the launch-script default applies).
+func validateServerOptions(req LaunchRequest) bool {
+	return validAPMode(req.ReleaseMode) &&
+		validAPMode(req.CollectMode) &&
+		validRemainingMode(req.RemainingMode) &&
+		validCountdownMode(req.CountdownMode) &&
+		intInRange(req.HintCost, 0, 100) &&
+		intInRange(req.LocationCheckPoints, 0, 1<<31-1) &&
+		intInRange(req.AutoShutdown, 0, 1<<31-1) &&
+		intInRange(req.Compatibility, 0, 2)
 }
 
 // Generate starts an async multiworld generation for the given session.
@@ -295,7 +335,7 @@ func (s *Service) Launch(ctx context.Context, req LaunchRequest) error {
 	if sess.Status != "generated" {
 		return ErrSessionNotReady
 	}
-	if !validAPMode(req.ReleaseMode) || !validAPMode(req.CollectMode) {
+	if !validateServerOptions(req) {
 		return ErrInvalidMode
 	}
 
@@ -311,12 +351,15 @@ func (s *Service) Launch(ctx context.Context, req LaunchRequest) error {
 		return fmt.Errorf("update session launching: %w", err)
 	}
 
-	go s.startSession(req.SessionID, bridgePort, apPort, req.ServerPassword, req.AdminPassword, req.ReleaseMode, req.CollectMode)
+	go s.startSession(req, bridgePort, apPort)
 	return nil
 }
 
-func (s *Service) startSession(sessionID string, bridgePort, apPort int, serverPassword, adminPassword, releaseMode, collectMode string) {
+func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 	ctx := context.Background()
+	sessionID := req.SessionID
+	serverPassword := req.ServerPassword
+	adminPassword := req.AdminPassword
 
 	crash := func(errMsg string) {
 		s.log.Error("startSession crashed", "session_id", sessionID, "err", errMsg)
@@ -331,14 +374,21 @@ func (s *Service) startSession(sessionID string, bridgePort, apPort int, serverP
 
 	// 1. Create AP server container
 	apContainerID, err := s.docker.CreateAPServer(ctx, docker.APServerCreateConfig{
-		SessionID:      sessionID,
-		APPort:         apPort,
-		ServerPassword: serverPassword,
-		AdminPassword:  adminPassword,
-		APImage:        s.cfg.APImage,
-		BridgeNetwork:  s.cfg.BridgeNetwork,
-		ReleaseMode:    releaseMode,
-		CollectMode:    collectMode,
+		SessionID:           sessionID,
+		APPort:              apPort,
+		ServerPassword:      serverPassword,
+		AdminPassword:       adminPassword,
+		APImage:             s.cfg.APImage,
+		BridgeNetwork:       s.cfg.BridgeNetwork,
+		ReleaseMode:         req.ReleaseMode,
+		CollectMode:         req.CollectMode,
+		RemainingMode:       req.RemainingMode,
+		CountdownMode:       req.CountdownMode,
+		DisableItemCheat:    req.DisableItemCheat,
+		HintCost:            req.HintCost,
+		LocationCheckPoints: req.LocationCheckPoints,
+		AutoShutdown:        req.AutoShutdown,
+		Compatibility:       req.Compatibility,
 	})
 	if err != nil {
 		crash(fmt.Sprintf("create ap server: %s", err))
@@ -605,8 +655,8 @@ func buildPlayerYaml(playerName, gameName string, values map[string]any) (string
 		values = map[string]any{}
 	}
 	data := map[string]any{
-		"name": playerName,
-		"game": gameName,
+		"name":   playerName,
+		"game":   gameName,
 		gameName: values,
 	}
 	out, err := yaml.Marshal(data)
