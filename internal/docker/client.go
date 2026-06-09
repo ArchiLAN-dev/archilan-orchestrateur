@@ -543,10 +543,19 @@ type sessionHostConfig struct {
 	NetworkMode string   `json:"NetworkMode"`
 }
 
+// GenerateOptions carries the optional Archipelago generator options for a generation.
+// They are passed straight to Generate.main() (via generate_multiworld.py); a nil/empty
+// field is omitted so the generator's host.yaml default applies.
+type GenerateOptions struct {
+	PlandoOptions []string // --plando (comma-joined); subset of bosses/items/texts/connections
+	Race          *bool    // --race (presence-only)
+	Spoiler       *int     // --spoiler N (0..3)
+}
+
 // GenerateMultiworld runs a one-shot container to generate the multiworld.
 // It uploads tarData into the container at /data, runs generate_multiworld.py,
 // and returns the output filename (from stdout) and the container ID.
-func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string, tarData io.Reader) (outputFile string, jobID string, err error) {
+func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string, opts GenerateOptions, tarData io.Reader) (outputFile string, jobID string, err error) {
 	cmd := []string{
 		"python3", "/usr/local/bin/generate_multiworld.py",
 		"--player_files_path", "/data/yamls",
@@ -555,6 +564,18 @@ func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string,
 	}
 	if seed != "" {
 		cmd = append(cmd, "--seed", seed)
+	}
+	// Generation options: forwarded to Generate.main(). Only emitted when set, so the
+	// generator's own host.yaml default stands otherwise. (Generate.py accepts --spoiler
+	// int, --race store_true, --plando string.)
+	if opts.Spoiler != nil {
+		cmd = append(cmd, "--spoiler", fmt.Sprintf("%d", *opts.Spoiler))
+	}
+	if opts.Race != nil && *opts.Race {
+		cmd = append(cmd, "--race")
+	}
+	if len(opts.PlandoOptions) > 0 {
+		cmd = append(cmd, "--plando", strings.Join(opts.PlandoOptions, ", "))
 	}
 
 	body := createSessionBody{

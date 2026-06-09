@@ -39,6 +39,30 @@ func TestValidateServerOptions(t *testing.T) {
 	}
 }
 
+func TestValidateGenerationOptions(t *testing.T) {
+	valid := []GenerateRequest{
+		{},
+		{PlandoOptions: []string{"bosses", "items", "texts", "connections"}},
+		{Spoiler: ptr(0)}, {Spoiler: ptr(3)},
+		{Race: ptr(true)},
+	}
+	for i, req := range valid {
+		if !validateGenerationOptions(req) {
+			t.Errorf("valid[%d] %+v should be valid", i, req)
+		}
+	}
+
+	invalid := []GenerateRequest{
+		{PlandoOptions: []string{"bosses", "nope"}},
+		{Spoiler: ptr(-1)}, {Spoiler: ptr(4)},
+	}
+	for i, req := range invalid {
+		if validateGenerationOptions(req) {
+			t.Errorf("invalid[%d] %+v should be rejected", i, req)
+		}
+	}
+}
+
 func TestValidAPMode(t *testing.T) {
 	valid := []string{"", "disabled", "enabled", "goal", "auto", "auto-enabled"}
 	for _, m := range valid {

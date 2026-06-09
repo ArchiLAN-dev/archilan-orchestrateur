@@ -22,9 +22,10 @@ import (
 )
 
 var (
-	ErrAlreadyInProgress = errors.New("session already in progress")
-	ErrSessionNotReady   = errors.New("session not ready")
-	ErrInvalidMode       = errors.New("invalid release/collect mode")
+	ErrAlreadyInProgress       = errors.New("session already in progress")
+	ErrSessionNotReady         = errors.New("session not ready")
+	ErrInvalidMode             = errors.New("invalid release/collect mode")
+	ErrInvalidGenerationOption = errors.New("invalid generation option")
 )
 
 // GenerateRequest carries the parameters for a multiworld generation.
@@ -32,6 +33,26 @@ type GenerateRequest struct {
 	SessionID     string
 	AdminPassword string
 	Seed          string // optional
+	// Optional generation options (Archipelago generator section). Nil/empty = use the
+	// generator's host.yaml default. Validated by validateGenerationOptions; see epic 27.
+	PlandoOptions []string // subset of: bosses, items, texts, connections
+	Race          *bool    // encrypted race roms + race mode
+	Spoiler       *int     // 0..3
+}
+
+var validPlandoOptions = map[string]bool{
+	"bosses": true, "items": true, "texts": true, "connections": true,
+}
+
+// validateGenerationOptions reports whether the optional generation options are well-formed.
+// Nil/empty fields are valid (the generator default applies).
+func validateGenerationOptions(req GenerateRequest) bool {
+	for _, p := range req.PlandoOptions {
+		if !validPlandoOptions[p] {
+			return false
+		}
+	}
+	return req.Spoiler == nil || (*req.Spoiler >= 0 && *req.Spoiler <= 3)
 }
 
 // LaunchRequest carries the parameters for launching a session.
@@ -105,6 +126,9 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 	if s.storage == nil {
 		return ErrStorageNotConfigured
 	}
+	if !validateGenerationOptions(req) {
+		return ErrInvalidGenerationOption
+	}
 
 	existing, err := s.db.GetSession(req.SessionID)
 	if err != nil {
@@ -138,11 +162,12 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 		}
 	}
 
-	go s.runGeneration(req.SessionID, req.AdminPassword, tarBuf, req.Seed)
+	go s.runGeneration(req, tarBuf)
 	return nil
 }
 
-func (s *Service) runGeneration(sessionID, adminPassword string, tarData *bytes.Buffer, seed string) {
+func (s *Service) runGeneration(req GenerateRequest, tarData *bytes.Buffer) {
+	sessionID := req.SessionID
 	ctx := context.Background()
 	deadline := time.Now().UTC().Add(s.cfg.GenerationTimeout)
 
@@ -150,7 +175,11 @@ func (s *Service) runGeneration(sessionID, adminPassword string, tarData *bytes.
 		s.log.Error("runGeneration: UpdateSessionGenerating failed", "session_id", sessionID, "err", err)
 	}
 
-	outputFile, jobID, err := s.docker.GenerateMultiworld(ctx, sessionID, seed, tarData)
+	outputFile, jobID, err := s.docker.GenerateMultiworld(ctx, sessionID, req.Seed, docker.GenerateOptions{
+		PlandoOptions: req.PlandoOptions,
+		Race:          req.Race,
+		Spoiler:       req.Spoiler,
+	}, tarData)
 	// Store jobID now that we have it (container may already be removed, but useful for audit)
 	if jobID != "" {
 		_ = s.db.UpdateSessionGenerating(sessionID, jobID, deadline)

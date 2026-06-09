@@ -98,6 +98,10 @@ type SessionResponse struct {
 type GenerateSessionRequest struct {
 	AdminPassword string `json:"adminPassword"`
 	Seed          string `json:"seed,omitempty"`
+	// Optional Archipelago generator options. Nil/empty = host.yaml default. See epic 27.
+	PlandoOptions []string `json:"plandoOptions,omitempty"` // bosses|items|texts|connections
+	Race          *bool    `json:"race,omitempty"`
+	Spoiler       *int     `json:"spoiler,omitempty"` // 0..3
 }
 
 // LaunchSessionRequest is the body for POST /sessions/{sessionId}/launch and /launch-from-file.
