@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +14,59 @@ import (
 	"archilan.fr/orchestrateur/internal/db"
 	"archilan.fr/orchestrateur/internal/service"
 )
+
+// parseOptInt parses an optional integer form field. Empty string → nil (unset).
+func parseOptInt(s string) (*int, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+// parseOptBool parses an optional boolean form field. Empty string → nil (unset).
+func parseOptBool(s string) (*bool, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(s))
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// serverOptionsFromForm extracts the optional AP server_options from a multipart form
+// into a LaunchRequest (SessionID/passwords/file handled by the caller). Returns an error
+// if any numeric/boolean field is malformed.
+func serverOptionsFromForm(r *http.Request) (service.LaunchRequest, error) {
+	var opts service.LaunchRequest
+	opts.ReleaseMode = r.FormValue("releaseMode")
+	opts.CollectMode = r.FormValue("collectMode")
+	opts.RemainingMode = r.FormValue("remainingMode")
+	opts.CountdownMode = r.FormValue("countdownMode")
+
+	var err error
+	if opts.DisableItemCheat, err = parseOptBool(r.FormValue("disableItemCheat")); err != nil {
+		return opts, err
+	}
+	if opts.HintCost, err = parseOptInt(r.FormValue("hintCost")); err != nil {
+		return opts, err
+	}
+	if opts.LocationCheckPoints, err = parseOptInt(r.FormValue("locationCheckPoints")); err != nil {
+		return opts, err
+	}
+	if opts.AutoShutdown, err = parseOptInt(r.FormValue("autoShutdown")); err != nil {
+		return opts, err
+	}
+	if opts.Compatibility, err = parseOptInt(r.FormValue("compatibility")); err != nil {
+		return opts, err
+	}
+	return opts, nil
+}
 
 func toSessionResponse(s *db.Session) SessionResponse {
 	return SessionResponse{
@@ -114,11 +169,18 @@ func handleLaunchSession(svc *service.Service) http.HandlerFunc {
 		}
 
 		err := svc.Launch(r.Context(), service.LaunchRequest{
-			SessionID:      sessionID,
-			ServerPassword: req.ServerPassword,
-			AdminPassword:  req.AdminPassword,
-			ReleaseMode:    req.ReleaseMode,
-			CollectMode:    req.CollectMode,
+			SessionID:           sessionID,
+			ServerPassword:      req.ServerPassword,
+			AdminPassword:       req.AdminPassword,
+			ReleaseMode:         req.ReleaseMode,
+			CollectMode:         req.CollectMode,
+			RemainingMode:       req.RemainingMode,
+			CountdownMode:       req.CountdownMode,
+			DisableItemCheat:    req.DisableItemCheat,
+			HintCost:            req.HintCost,
+			LocationCheckPoints: req.LocationCheckPoints,
+			AutoShutdown:        req.AutoShutdown,
+			Compatibility:       req.Compatibility,
 		})
 		if err != nil {
 			writeSessionError(w, err)
@@ -141,6 +203,13 @@ func handleLaunchSession(svc *service.Service) http.HandlerFunc {
 // @Param       serverPassword formData string false "Server password (optional)"
 // @Param       releaseMode    formData string false "AP !release policy: disabled|enabled|goal|auto|auto-enabled (default disabled)"
 // @Param       collectMode    formData string false "AP !collect policy: disabled|enabled|goal|auto|auto-enabled (default disabled)"
+// @Param       remainingMode  formData string false "AP !remaining policy: enabled|disabled|goal"
+// @Param       countdownMode  formData string false "AP !countdown policy: enabled|disabled|auto"
+// @Param       disableItemCheat formData bool false "Disable !getitem"
+// @Param       hintCost       formData int  false "Hint cost (% of checks, 0-100)"
+// @Param       locationCheckPoints formData int false "Points per location check"
+// @Param       autoShutdown   formData int  false "Auto-shutdown after N seconds of inactivity (0 = never)"
+// @Param       compatibility  formData int  false "Compatibility: 2 casual / 1 racing / 0 tournament"
 // @Success     202
 // @Failure     400 {object} ErrorResponse
 // @Failure     500 {object} ErrorResponse
@@ -160,9 +229,15 @@ func handleLaunchSessionFromFile(svc *service.Service) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "adminPassword is required")
 			return
 		}
-		serverPassword := r.FormValue("serverPassword")
-		releaseMode := r.FormValue("releaseMode")
-		collectMode := r.FormValue("collectMode")
+
+		opts, err := serverOptionsFromForm(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid numeric/boolean form field")
+			return
+		}
+		opts.SessionID = sessionID
+		opts.ServerPassword = r.FormValue("serverPassword")
+		opts.AdminPassword = adminPassword
 
 		file, header, err := r.FormFile("file")
 		if err != nil {
@@ -177,13 +252,7 @@ func handleLaunchSessionFromFile(svc *service.Service) http.HandlerFunc {
 			return
 		}
 
-		if err := svc.LaunchFromFile(r.Context(), service.LaunchRequest{
-			SessionID:      sessionID,
-			ServerPassword: serverPassword,
-			AdminPassword:  adminPassword,
-			ReleaseMode:    releaseMode,
-			CollectMode:    collectMode,
-		}, fileData, header.Filename); err != nil {
+		if err := svc.LaunchFromFile(r.Context(), opts, fileData, header.Filename); err != nil {
 			writeSessionError(w, err)
 			return
 		}

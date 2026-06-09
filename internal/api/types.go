@@ -20,7 +20,7 @@ type ContainersResponse struct {
 type CreateContainerRequest struct {
 	SessionID      string `json:"sessionId"      example:"weekly-run-2026-05-20"`
 	AdminPassword  string `json:"adminPassword"  example:"s3cr3t"` // required
-	ServerPassword string `json:"serverPassword" example:""`        // optional — leave empty for open games
+	ServerPassword string `json:"serverPassword" example:""`       // optional — leave empty for open games
 }
 
 // CreateContainerResponse is returned on successful container creation.
@@ -104,10 +104,17 @@ type GenerateSessionRequest struct {
 type LaunchSessionRequest struct {
 	ServerPassword string `json:"serverPassword,omitempty"`
 	AdminPassword  string `json:"adminPassword"`
-	// Optional AP server policies for this session. Empty = launch-script default
-	// (disabled). Valid: disabled, enabled, goal, auto, auto-enabled.
-	ReleaseMode string `json:"releaseMode,omitempty"`
-	CollectMode string `json:"collectMode,omitempty"`
+	// Optional AP server_options for this session. Empty/nil = launch-script default.
+	// Modes valid values: see service validation. See epic 27.
+	ReleaseMode         string `json:"releaseMode,omitempty"`
+	CollectMode         string `json:"collectMode,omitempty"`
+	RemainingMode       string `json:"remainingMode,omitempty"`
+	CountdownMode       string `json:"countdownMode,omitempty"`
+	DisableItemCheat    *bool  `json:"disableItemCheat,omitempty"`
+	HintCost            *int   `json:"hintCost,omitempty"`
+	LocationCheckPoints *int   `json:"locationCheckPoints,omitempty"`
+	AutoShutdown        *int   `json:"autoShutdown,omitempty"`
+	Compatibility       *int   `json:"compatibility,omitempty"`
 }
 
 // SlotOption is a randomizer option with required flag and current/default values.

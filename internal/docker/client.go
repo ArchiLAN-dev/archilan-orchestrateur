@@ -83,12 +83,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 // ---------------------------------------------------------------------------
 
 type createBody struct {
-	Image        string            `json:"Image"`
-	Env          []string          `json:"Env"`
-	Labels       map[string]string `json:"Labels"`
-	ExposedPorts map[string]struct{} `json:"ExposedPorts"`
-	HostConfig   hostConfig        `json:"HostConfig"`
-	NetworkingConfig networkingConfig `json:"NetworkingConfig"`
+	Image            string              `json:"Image"`
+	Env              []string            `json:"Env"`
+	Labels           map[string]string   `json:"Labels"`
+	ExposedPorts     map[string]struct{} `json:"ExposedPorts"`
+	HostConfig       hostConfig          `json:"HostConfig"`
+	NetworkingConfig networkingConfig    `json:"NetworkingConfig"`
 }
 
 type hostConfig struct {
@@ -270,7 +270,6 @@ func (c *Client) Inspect(ctx context.Context, containerID string) (*ContainerSta
 		Status:   ir.State.Status,
 	}, nil
 }
-
 
 func (c *Client) Stop(ctx context.Context, containerID string) error {
 	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/containers/%s/stop?t=10", containerID), nil)
@@ -632,18 +631,28 @@ type APServerCreateConfig struct {
 	AdminPassword  string // AP server admin password (enables !admin commands)
 	APImage        string
 	BridgeNetwork  string
-	ReleaseMode    string // optional !release policy; empty = AP launch-script default (disabled)
-	CollectMode    string // optional !collect policy; empty = AP launch-script default (disabled)
+	// Optional AP server_options for this session. Empty string / nil pointer means
+	// "don't pass it" — the launch script's own default stands. Modes are validated
+	// upstream (service.Launch). See epic 27.
+	ReleaseMode         string // !release policy; empty = launch-script default (disabled)
+	CollectMode         string // !collect policy; empty = launch-script default (disabled)
+	RemainingMode       string // !remaining policy
+	CountdownMode       string // !countdown policy
+	DisableItemCheat    *bool  // disable !getitem
+	HintCost            *int   // % of checks per hint
+	LocationCheckPoints *int   // points per check
+	AutoShutdown        *int   // seconds of inactivity before shutdown (0 = never)
+	Compatibility       *int   // 2 casual / 1 racing / 0 tournament
 }
 
 type createAPServerBody struct {
-	Image        string              `json:"Image"`
-	Cmd          []string            `json:"Cmd"`
-	Env          []string            `json:"Env"`
-	Labels       map[string]string   `json:"Labels"`
-	ExposedPorts map[string]struct{} `json:"ExposedPorts"`
-	HostConfig   apServerHostConfig  `json:"HostConfig"`
-	NetworkingConfig networkingConfig `json:"NetworkingConfig"`
+	Image            string              `json:"Image"`
+	Cmd              []string            `json:"Cmd"`
+	Env              []string            `json:"Env"`
+	Labels           map[string]string   `json:"Labels"`
+	ExposedPorts     map[string]struct{} `json:"ExposedPorts"`
+	HostConfig       apServerHostConfig  `json:"HostConfig"`
+	NetworkingConfig networkingConfig    `json:"NetworkingConfig"`
 }
 
 type apServerHostConfig struct {
@@ -660,12 +669,29 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 		"ARCHIPELAGO_OUTPUT_DIR=/data/output",
 	}
 	// Only override the launch-script defaults when explicitly provided, so the
-	// script's own default (disabled) stands otherwise.
-	if cfg.ReleaseMode != "" {
-		env = append(env, fmt.Sprintf("RELEASE_MODE=%s", cfg.ReleaseMode))
+	// script's own defaults stand otherwise.
+	for k, v := range map[string]string{
+		"RELEASE_MODE":   cfg.ReleaseMode,
+		"COLLECT_MODE":   cfg.CollectMode,
+		"REMAINING_MODE": cfg.RemainingMode,
+		"COUNTDOWN_MODE": cfg.CountdownMode,
+	} {
+		if v != "" {
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
+		}
 	}
-	if cfg.CollectMode != "" {
-		env = append(env, fmt.Sprintf("COLLECT_MODE=%s", cfg.CollectMode))
+	if cfg.DisableItemCheat != nil {
+		env = append(env, fmt.Sprintf("DISABLE_ITEM_CHEAT=%t", *cfg.DisableItemCheat))
+	}
+	for k, v := range map[string]*int{
+		"HINT_COST":             cfg.HintCost,
+		"LOCATION_CHECK_POINTS": cfg.LocationCheckPoints,
+		"AUTO_SHUTDOWN":         cfg.AutoShutdown,
+		"COMPATIBILITY":         cfg.Compatibility,
+	} {
+		if v != nil {
+			env = append(env, fmt.Sprintf("%s=%d", k, *v))
+		}
 	}
 
 	body := createAPServerBody{
@@ -673,8 +699,8 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 		Cmd:   []string{"/ap_server.sh"},
 		Env:   env,
 		Labels: map[string]string{
-			managedLabel: "true",
-			sessionLabel: cfg.SessionID,
+			managedLabel:    "true",
+			sessionLabel:    cfg.SessionID,
 			"archilan.role": "ap-server",
 		},
 		ExposedPorts: map[string]struct{}{"38281/tcp": {}},
