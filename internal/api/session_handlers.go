@@ -91,6 +91,8 @@ func writeSessionError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, ErrorResponse{Error: "not_ready"})
 	case errors.Is(err, service.ErrInvalidMode):
 		writeError(w, http.StatusBadRequest, "invalid release/collect mode")
+	case errors.Is(err, service.ErrInvalidGenerationOption):
+		writeError(w, http.StatusBadRequest, "invalid generation option")
 	case errors.Is(err, service.ErrStorageNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "storage not configured")
 	default:
@@ -131,6 +133,9 @@ func handleGenerateSession(svc *service.Service) http.HandlerFunc {
 			SessionID:     sessionID,
 			AdminPassword: req.AdminPassword,
 			Seed:          req.Seed,
+			PlandoOptions: req.PlandoOptions,
+			Race:          req.Race,
+			Spoiler:       req.Spoiler,
 		})
 		if err != nil {
 			writeSessionError(w, err)
