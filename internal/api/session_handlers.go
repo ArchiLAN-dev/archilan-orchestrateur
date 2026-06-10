@@ -310,6 +310,31 @@ func handleRestartSession(svc *service.Service) http.HandlerFunc {
 	}
 }
 
+// handleRelaunchFromSave godoc
+// @Summary     Relaunch an idle session from its save
+// @Description Resumes a session that went idle via Archipelago's auto_shutdown, re-launching
+// @Description the AP server on its retained volume so MultiServer auto-loads the latest .apsave.
+// @Tags        sessions
+// @Accept      json
+// @Produce     json
+// @Param       sessionId path string true "Session ID"
+// @Success     202
+// @Failure     404 {object} ErrorResponse
+// @Failure     409 {object} ErrorResponse "Not ready (no output file or session live)"
+// @Failure     500 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /sessions/{sessionId}/relaunch-from-save [post]
+func handleRelaunchFromSave(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID := chi.URLParam(r, "sessionId")
+		if err := svc.RelaunchFromSave(r.Context(), sessionID); err != nil {
+			writeSessionError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
 // handleGetSession godoc
 // @Summary     Get session
 // @Description Returns the current state of a session
