@@ -1,5 +1,26 @@
 basePath: /
 definitions:
+  api.ApworldEntry:
+    properties:
+      game:
+        type: string
+      hash:
+        type: string
+    type: object
+  api.ApworldListResponse:
+    properties:
+      apworlds:
+        items:
+          $ref: '#/definitions/api.ApworldEntry'
+        type: array
+    type: object
+  api.ApworldOptionsResponse:
+    properties:
+      options:
+        items:
+          $ref: '#/definitions/api.TemplateOption'
+        type: array
+    type: object
   api.ConfigureResponse:
     properties:
       slots:
@@ -20,6 +41,8 @@ definitions:
     properties:
       apworldHash:
         type: string
+      options:
+        $ref: '#/definitions/api.SlotOptionsPayload'
       playerYaml:
         type: string
     type: object
@@ -93,8 +116,19 @@ definitions:
     properties:
       adminPassword:
         type: string
+      plandoOptions:
+        description: Optional Archipelago generator options. Nil/empty = host.yaml
+          default. See epic 27.
+        items:
+          type: string
+        type: array
+      race:
+        type: boolean
       seed:
         type: string
+      spoiler:
+        description: 0..3
+        type: integer
     type: object
   api.HealthResponse:
     properties:
@@ -105,6 +139,27 @@ definitions:
   api.LaunchSessionRequest:
     properties:
       adminPassword:
+        type: string
+      autoShutdown:
+        type: integer
+      collectMode:
+        type: string
+      compatibility:
+        type: integer
+      countdownMode:
+        type: string
+      disableItemCheat:
+        type: boolean
+      hintCost:
+        type: integer
+      locationCheckPoints:
+        type: integer
+      releaseMode:
+        description: |-
+          Optional AP server_options for this session. Empty/nil = launch-script default.
+          Modes valid values: see service validation. See epic 27.
+        type: string
+      remainingMode:
         type: string
       serverPassword:
         type: string
@@ -181,6 +236,14 @@ definitions:
       required:
         type: boolean
     type: object
+  api.SlotOptionsPayload:
+    properties:
+      playerName:
+        type: string
+      values:
+        additionalProperties: {}
+        type: object
+    type: object
   api.TemplateOption:
     properties:
       defaultValue: {}
@@ -193,12 +256,15 @@ definitions:
       rangeMin:
         type: integer
       type:
-        description: range | choice | toggle | text
         type: string
       validValues:
         items:
           type: string
         type: array
+      weights:
+        additionalProperties:
+          type: integer
+        type: object
     type: object
   api.UploadApworldResponse:
     properties:
@@ -218,6 +284,24 @@ info:
   version: "1.0"
 paths:
   /apworlds:
+    get:
+      description: Returns all apworlds stored in Minio with their game name and version
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ApworldListResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List uploaded apworlds
+      tags:
+      - apworlds
     post:
       consumes:
       - multipart/form-data
@@ -252,6 +336,36 @@ paths:
       security:
       - BearerAuth: []
       summary: Upload an apworld and generate its YAML template
+      tags:
+      - apworlds
+  /apworlds/{hash}/options:
+    get:
+      description: Returns the structured game options extracted from the stored YAML
+        template
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ApworldOptionsResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get apworld parsed options
       tags:
       - apworlds
   /apworlds/{hash}/yaml:
@@ -662,6 +776,44 @@ paths:
         in: formData
         name: serverPassword
         type: string
+      - description: 'AP !release policy: disabled|enabled|goal|auto|auto-enabled
+          (default disabled)'
+        in: formData
+        name: releaseMode
+        type: string
+      - description: 'AP !collect policy: disabled|enabled|goal|auto|auto-enabled
+          (default disabled)'
+        in: formData
+        name: collectMode
+        type: string
+      - description: 'AP !remaining policy: enabled|disabled|goal'
+        in: formData
+        name: remainingMode
+        type: string
+      - description: 'AP !countdown policy: enabled|disabled|auto'
+        in: formData
+        name: countdownMode
+        type: string
+      - description: Disable !getitem
+        in: formData
+        name: disableItemCheat
+        type: boolean
+      - description: Hint cost (% of checks, 0-100)
+        in: formData
+        name: hintCost
+        type: integer
+      - description: Points per location check
+        in: formData
+        name: locationCheckPoints
+        type: integer
+      - description: Auto-shutdown after N seconds of inactivity (0 = never)
+        in: formData
+        name: autoShutdown
+        type: integer
+      - description: 'Compatibility: 2 casual / 1 racing / 0 tournament'
+        in: formData
+        name: compatibility
+        type: integer
       produces:
       - application/json
       responses:
@@ -713,6 +865,41 @@ paths:
       security:
       - BearerAuth: []
       summary: Validate slots before generation
+      tags:
+      - sessions
+  /sessions/{sessionId}/relaunch-from-save:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Resumes a session that went idle via Archipelago's auto_shutdown, re-launching
+        the AP server on its retained volume so MultiServer auto-loads the latest .apsave.
+      parameters:
+      - description: Session ID
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "409":
+          description: Not ready (no output file or session live)
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Relaunch an idle session from its save
       tags:
       - sessions
   /sessions/{sessionId}/restart:

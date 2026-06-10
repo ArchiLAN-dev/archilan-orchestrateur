@@ -74,7 +74,7 @@ type LaunchRequest struct {
 }
 
 // validAPMode reports whether a release/collect mode value is accepted. The empty
-// string is allowed and means "don't pass the flag — let the AP launch script default".
+// string is allowed and means "don't pass the flag - let the AP launch script default".
 func validAPMode(mode string) bool {
 	switch mode {
 	case "", "disabled", "enabled", "goal", "auto", "auto-enabled":
@@ -246,7 +246,7 @@ func isZipArtifact(filename string, data []byte) bool {
 
 // buildOutputArtifact turns the captured /data/output tar into the stored artifact zip.
 // If generation already produced a single bundle zip (AP_*.zip), that zip is itself the
-// flat archive of the real files (multidata, patches, spoiler), so it is stored as-is —
+// flat archive of the real files (multidata, patches, spoiler), so it is stored as-is -
 // avoiding a confusing zip-in-zip. Otherwise the loose output files are packed flat.
 func buildOutputArtifact(tarData []byte) ([]byte, error) {
 	tr := tar.NewReader(bytes.NewReader(tarData))
@@ -433,7 +433,7 @@ func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 
 	// 3. Wait for AP server to be reachable via its Docker network hostname.
 	// The orchestrateur itself runs in a container, so probing localhost:{apPort}
-	// (the host-mapped port) would fail — probe the internal address instead.
+	// (the host-mapped port) would fail - probe the internal address instead.
 	apAddr := fmt.Sprintf("ap-server-%s:38281", sessionID)
 	if !s.docker.WaitForAddress(ctx, apAddr, 60*time.Second) {
 		_ = s.docker.Stop(ctx, apContainerID)
@@ -511,7 +511,7 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 
 	// Stage the session's yamls + worlds from MinIO into the volume so downstream
 	// tooling that rebuilds the world (reachability) finds /data/yamls and /data/worlds.
-	// The provided file is the pre-generated multidata — no generation is run here.
+	// The provided file is the pre-generated multidata - no generation is run here.
 	if s.storage != nil {
 		tarBuf, n, err := s.buildDataTar(ctx, req.SessionID)
 		if err != nil {
@@ -617,6 +617,58 @@ func (s *Service) RestartSession(ctx context.Context, sessionID string) error {
 
 	// Best-effort cleanup
 	_ = s.StopSession(ctx, sessionID)
+
+	serverPassword := ""
+	if sess.ServerPassword != nil {
+		serverPassword = *sess.ServerPassword
+	}
+	adminPassword := ""
+	if sess.AdminPassword != nil {
+		adminPassword = *sess.AdminPassword
+	}
+
+	if err := s.db.UpdateSessionStatus(sessionID, "generated", nil); err != nil {
+		return fmt.Errorf("reset session to generated: %w", err)
+	}
+
+	return s.Launch(ctx, LaunchRequest{
+		SessionID:      sessionID,
+		ServerPassword: serverPassword,
+		AdminPassword:  adminPassword,
+	})
+}
+
+// RelaunchFromSave resumes a session that went idle via Archipelago's auto_shutdown.
+// The per-session volume is retained on idle, so the latest .apsave still sits in
+// /data/output next to the multidata; re-launching the AP server on that volume makes
+// MultiServer auto-load the save and resume progress. No regeneration, no MinIO round-trip.
+func (s *Service) RelaunchFromSave(ctx context.Context, sessionID string) error {
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil {
+		return fmt.Errorf("get session: %w", err)
+	}
+	if sess == nil {
+		return ErrNotFound
+	}
+	// Idle sessions are persisted as "stopped" (the orchestrateur has no distinct idle
+	// state); they carry the generated OutputFile and a retained volume. A live session
+	// has nothing to relaunch.
+	switch sess.Status {
+	case "running", "launching", "generating":
+		return ErrAlreadyInProgress
+	}
+	if sess.OutputFile == nil {
+		return ErrSessionNotReady
+	}
+
+	// Force-remove any leftover (stopped) AP container so CreateAPServer can reuse the name.
+	_ = s.docker.RemoveAPServer(ctx, sessionID)
+	if sess.BridgeContainerID != nil {
+		_ = s.docker.Remove(ctx, *sess.BridgeContainerID)
+	}
+	if sess.BridgePort != nil {
+		s.pool.Release(*sess.BridgePort)
+	}
 
 	serverPassword := ""
 	if sess.ServerPassword != nil {

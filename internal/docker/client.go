@@ -105,6 +105,9 @@ type portBinding struct {
 
 type restartPolicy struct {
 	Name string `json:"Name"`
+	// MaximumRetryCount is only honoured by Docker for the "on-failure" policy; omitted
+	// (zero value) for "unless-stopped"/"no".
+	MaximumRetryCount int `json:"MaximumRetryCount,omitempty"`
 }
 
 type networkingConfig struct {
@@ -243,7 +246,7 @@ type inspectResponse struct {
 type listResponse struct {
 	ID    string `json:"Id"`
 	State string `json:"State"`
-	// ExitCode is not in the list response — use Inspect for that.
+	// ExitCode is not in the list response - use Inspect for that.
 }
 
 // Inspect returns the live status of a single container. Returns nil if not found.
@@ -653,7 +656,7 @@ type APServerCreateConfig struct {
 	APImage        string
 	BridgeNetwork  string
 	// Optional AP server_options for this session. Empty string / nil pointer means
-	// "don't pass it" — the launch script's own default stands. Modes are validated
+	// "don't pass it" - the launch script's own default stands. Modes are validated
 	// upstream (service.Launch). See epic 27.
 	ReleaseMode         string // !release policy; empty = launch-script default (disabled)
 	CollectMode         string // !collect policy; empty = launch-script default (disabled)
@@ -729,7 +732,10 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 			PortBindings: map[string][]portBinding{
 				"38281/tcp": {{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.APPort)}},
 			},
-			RestartPolicy: restartPolicy{Name: "unless-stopped"},
+			// on-failure (not unless-stopped): a clean exit 0 from Archipelago's own
+			// auto_shutdown must leave the container stopped (the session goes idle); only a
+			// real crash (exit != 0) is auto-retried, capped so a crash-loop ends as crashed.
+			RestartPolicy: restartPolicy{Name: "on-failure", MaximumRetryCount: 3},
 			Binds:         []string{fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID)},
 		},
 		NetworkingConfig: networkingConfig{

@@ -16,6 +16,35 @@ const docTemplate = `{
     "basePath": "{{.BasePath}}",
     "paths": {
         "/apworlds": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all apworlds stored in Minio with their game name and version",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "List uploaded apworlds",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldListResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -63,6 +92,52 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/apworlds/{hash}/options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the structured game options extracted from the stored YAML template",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Get apworld parsed options",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldOptionsResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -701,6 +776,60 @@ const docTemplate = `{
                         "description": "Server password (optional)",
                         "name": "serverPassword",
                         "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "AP !release policy: disabled|enabled|goal|auto|auto-enabled (default disabled)",
+                        "name": "releaseMode",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "AP !collect policy: disabled|enabled|goal|auto|auto-enabled (default disabled)",
+                        "name": "collectMode",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "AP !remaining policy: enabled|disabled|goal",
+                        "name": "remainingMode",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "AP !countdown policy: enabled|disabled|auto",
+                        "name": "countdownMode",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Disable !getitem",
+                        "name": "disableItemCheat",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Hint cost (% of checks, 0-100)",
+                        "name": "hintCost",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Points per location check",
+                        "name": "locationCheckPoints",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Auto-shutdown after N seconds of inactivity (0 = never)",
+                        "name": "autoShutdown",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Compatibility: 2 casual / 1 racing / 0 tournament",
+                        "name": "compatibility",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -767,6 +896,58 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{sessionId}/relaunch-from-save": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Resumes a session that went idle via Archipelago's auto_shutdown, re-launching\nthe AP server on its retained volume so MultiServer auto-loads the latest .apsave.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Relaunch an idle session from its save",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Not ready (no output file or session live)",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -868,6 +1049,39 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "api.ApworldEntry": {
+            "type": "object",
+            "properties": {
+                "game": {
+                    "type": "string"
+                },
+                "hash": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ApworldListResponse": {
+            "type": "object",
+            "properties": {
+                "apworlds": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.ApworldEntry"
+                    }
+                }
+            }
+        },
+        "api.ApworldOptionsResponse": {
+            "type": "object",
+            "properties": {
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.TemplateOption"
+                    }
+                }
+            }
+        },
         "api.ConfigureResponse": {
             "type": "object",
             "properties": {
@@ -898,6 +1112,9 @@ const docTemplate = `{
             "properties": {
                 "apworldHash": {
                     "type": "string"
+                },
+                "options": {
+                    "$ref": "#/definitions/api.SlotOptionsPayload"
                 },
                 "playerYaml": {
                     "type": "string"
@@ -1007,8 +1224,22 @@ const docTemplate = `{
                 "adminPassword": {
                     "type": "string"
                 },
+                "plandoOptions": {
+                    "description": "Optional Archipelago generator options. Nil/empty = host.yaml default. See epic 27.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "race": {
+                    "type": "boolean"
+                },
                 "seed": {
                     "type": "string"
+                },
+                "spoiler": {
+                    "description": "0..3",
+                    "type": "integer"
                 }
             }
         },
@@ -1025,6 +1256,34 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "adminPassword": {
+                    "type": "string"
+                },
+                "autoShutdown": {
+                    "type": "integer"
+                },
+                "collectMode": {
+                    "type": "string"
+                },
+                "compatibility": {
+                    "type": "integer"
+                },
+                "countdownMode": {
+                    "type": "string"
+                },
+                "disableItemCheat": {
+                    "type": "boolean"
+                },
+                "hintCost": {
+                    "type": "integer"
+                },
+                "locationCheckPoints": {
+                    "type": "integer"
+                },
+                "releaseMode": {
+                    "description": "Optional AP server_options for this session. Empty/nil = launch-script default.\nModes valid values: see service validation. See epic 27.",
+                    "type": "string"
+                },
+                "remainingMode": {
                     "type": "string"
                 },
                 "serverPassword": {
@@ -1142,6 +1401,18 @@ const docTemplate = `{
                 }
             }
         },
+        "api.SlotOptionsPayload": {
+            "type": "object",
+            "properties": {
+                "playerName": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
         "api.TemplateOption": {
             "type": "object",
             "properties": {
@@ -1159,13 +1430,18 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "type": {
-                    "description": "range | choice | toggle | text",
                     "type": "string"
                 },
                 "validValues": {
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                },
+                "weights": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
                     }
                 }
             }

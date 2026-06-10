@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"archilan.fr/orchestrateur/internal/db"
+	"archilan.fr/orchestrateur/internal/docker"
 	"archilan.fr/orchestrateur/internal/webhook"
 )
 
@@ -44,7 +46,7 @@ func (s *Service) sweepTransit(ctx context.Context) {
 		case "generating":
 			// Resolve container reference: prefer stored ID, fall back to well-known name.
 			// GenerationJobID is only stored after GenerateMultiworld returns (container already
-			// removed by then), so during a live generation the field is always empty — look up
+			// removed by then), so during a live generation the field is always empty - look up
 			// by name instead so the sweeper can verify liveness correctly.
 			containerRef := fmt.Sprintf("archilan-gen-%s", sess.SessionID)
 			if sess.GenerationJobID != nil && *sess.GenerationJobID != "" {
@@ -52,13 +54,13 @@ func (s *Service) sweepTransit(ctx context.Context) {
 			}
 			info, _ := s.docker.Inspect(ctx, containerRef)
 			if info != nil && info.Running {
-				// Still running — extend deadline by 20% of the timeout
+				// Still running - extend deadline by 20% of the timeout
 				newDeadline := time.Now().Add(s.cfg.GenerationTimeout / 5)
 				_ = s.db.ExtendSessionDeadline(sess.SessionID, newDeadline)
 				s.log.Info("sweeper: generation still running, extending deadline", "session_id", sess.SessionID)
 				continue
 			}
-			// Container dead or unknown — crash
+			// Container dead or unknown - crash
 			s.log.Warn("sweeper: generation deadline exceeded, crashing session", "session_id", sess.SessionID)
 			_ = s.db.UpdateSessionCrashed(sess.SessionID)
 			s.webhook.Send(ctx, webhook.Payload{
@@ -99,16 +101,60 @@ func (s *Service) sweepRunning(ctx context.Context) {
 			continue // inspect error, skip
 		}
 		if info == nil || !info.Running {
-			s.log.Warn("sweeper: AP server died, crashing session", "session_id", sess.SessionID)
-			if sess.BridgePort != nil {
-				s.pool.Release(*sess.BridgePort)
+			switch apExitOutcome(info) {
+			case outcomeIdle:
+				s.idleFromAutoShutdown(ctx, sess)
+			default:
+				s.crashRunningSession(ctx, sess, "AP server container died")
 			}
-			_ = s.db.UpdateSessionCrashed(sess.SessionID)
-			s.webhook.Send(ctx, webhook.Payload{
-				Event:     "session.crashed",
-				SessionID: sess.SessionID,
-				Error:     "AP server container died",
-			})
 		}
 	}
+}
+
+const (
+	outcomeIdle  = "idle"
+	outcomeCrash = "crash"
+)
+
+// apExitOutcome classifies a non-running AP server container. A clean exit (code 0) is
+// Archipelago's own auto_shutdown after inactivity → the session is idle and resumable from
+// the save on its retained volume. Any other exit (non-zero) or a vanished container (nil)
+// is a real crash.
+func apExitOutcome(info *docker.ContainerStatus) string {
+	if info != nil && info.ExitCode == 0 {
+		return outcomeIdle
+	}
+	return outcomeCrash
+}
+
+// idleFromAutoShutdown handles an AP server that exited cleanly via its auto_shutdown:
+// stop the now-idle bridge, release the port, keep the volume (it holds the .apsave), and
+// tell the API the session is idle (resumable via relaunch-from-save).
+func (s *Service) idleFromAutoShutdown(ctx context.Context, sess *db.Session) {
+	s.log.Info("sweeper: AP auto_shutdown, marking session idle", "session_id", sess.SessionID)
+	if sess.BridgeContainerID != nil {
+		_ = s.docker.Stop(ctx, *sess.BridgeContainerID)
+	}
+	if sess.BridgePort != nil {
+		s.pool.Release(*sess.BridgePort)
+	}
+	_ = s.db.UpdateSessionStopped(sess.SessionID)
+	s.webhook.Send(ctx, webhook.Payload{
+		Event:     "session.idle",
+		SessionID: sess.SessionID,
+	})
+}
+
+// crashRunningSession handles a running session whose AP server died unexpectedly.
+func (s *Service) crashRunningSession(ctx context.Context, sess *db.Session, reason string) {
+	s.log.Warn("sweeper: AP server died, crashing session", "session_id", sess.SessionID)
+	if sess.BridgePort != nil {
+		s.pool.Release(*sess.BridgePort)
+	}
+	_ = s.db.UpdateSessionCrashed(sess.SessionID)
+	s.webhook.Send(ctx, webhook.Payload{
+		Event:     "session.crashed",
+		SessionID: sess.SessionID,
+		Error:     reason,
+	})
 }
