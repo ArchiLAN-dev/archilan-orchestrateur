@@ -119,6 +119,11 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, 
 type OptionTypeOverride struct {
 	Type           string         `json:"type"`
 	DefaultWeights map[string]int `json:"defaultWeights,omitempty"`
+	// Authoritative range bounds + default from introspection (story 9.25),
+	// emitted only for range options; override the template-parsed values.
+	Min     *int `json:"min,omitempty"`
+	Max     *int `json:"max,omitempty"`
+	Default *int `json:"default,omitempty"`
 }
 
 // GetApworldOptionTypes returns introspected type overrides for an apworld's options.

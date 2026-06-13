@@ -219,6 +219,17 @@ func handleGetApworldOptions(svc *service.Service) http.HandlerFunc {
 				if ov.Type == "weights" && ov.DefaultWeights != nil {
 					opt.DefaultValue = ov.DefaultWeights
 				}
+				// Authoritative range bounds/default from introspection win over the
+				// template-parsed (comment-derived) values (story 9.25).
+				if ov.Min != nil {
+					opt.RangeMin = ov.Min
+				}
+				if ov.Max != nil {
+					opt.RangeMax = ov.Max
+				}
+				if ov.Default != nil {
+					opt.DefaultValue = *ov.Default
+				}
 			}
 			opts[i] = opt
 		}
