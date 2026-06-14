@@ -1,6 +1,6 @@
 // @title           Archilan Orchestrateur API
 // @version         1.0
-// @description     Gestion des containers Bridge Archipelago — création, arrêt, suppression et monitoring.
+// @description     Gestion des containers Bridge Archipelago - création, arrêt, suppression et monitoring.
 // @BasePath        /
 // @securityDefinitions.apikey BearerAuth
 // @in              header

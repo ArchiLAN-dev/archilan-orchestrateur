@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Gestion des containers Bridge Archipelago — création, arrêt, suppression et monitoring.",
+        "description": "Gestion des containers Bridge Archipelago - création, arrêt, suppression et monitoring.",
         "title": "Archilan Orchestrateur API",
         "contact": {},
         "version": "1.0"
@@ -851,7 +851,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Validates slot data (playerYaml, required options) and returns proposed slot names.\nStateless — does not create or modify any session record.",
+                "description": "Validates slot data (playerYaml, required options) and returns proposed slot names.\nStateless - does not create or modify any session record.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1175,7 +1175,7 @@
                     "example": "s3cr3t"
                 },
                 "serverPassword": {
-                    "description": "optional — leave empty for open games",
+                    "description": "optional - leave empty for open games",
                     "type": "string",
                     "example": ""
                 },

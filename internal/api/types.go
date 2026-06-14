@@ -20,7 +20,7 @@ type ContainersResponse struct {
 type CreateContainerRequest struct {
 	SessionID      string `json:"sessionId"      example:"weekly-run-2026-05-20"`
 	AdminPassword  string `json:"adminPassword"  example:"s3cr3t"` // required
-	ServerPassword string `json:"serverPassword" example:""`       // optional — leave empty for open games
+	ServerPassword string `json:"serverPassword" example:""`       // optional - leave empty for open games
 }
 
 // CreateContainerResponse is returned on successful container creation.
@@ -33,11 +33,11 @@ type CreateContainerResponse struct {
 // TemplateOption is a parsed game-specific option from an Archipelago YAML template.
 //
 // Type values:
-//   - "range"   — numeric range; DefaultValue is int, RangeMin/RangeMax set.
-//   - "choice"  — enumerated string; DefaultValue is string, ValidValues lists choices.
-//   - "toggle"  — boolean flag; DefaultValue is bool.
-//   - "text"    — free-form string; DefaultValue is nil or string.
-//   - "weights" — each item in ValidValues receives an independent weight (0–100);
+//   - "range"   - numeric range; DefaultValue is int, RangeMin/RangeMax set.
+//   - "choice"  - enumerated string; DefaultValue is string, ValidValues lists choices.
+//   - "toggle"  - boolean flag; DefaultValue is bool.
+//   - "text"    - free-form string; DefaultValue is nil or string.
+//   - "weights" - each item in ValidValues receives an independent weight (0–100);
 //     DefaultValue is map[string]int of item → default weight.
 type TemplateOption struct {
 	Key          string         `json:"key"`

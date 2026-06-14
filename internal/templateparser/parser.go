@@ -77,7 +77,7 @@ func Parse(data []byte) []Option {
 
 		case indent == 2:
 			if strings.HasPrefix(trimmed, "#") {
-				// Group separator (####, # Title #, etc.) — reset
+				// Group separator (####, # Title #, etc.) - reset
 				flush()
 			} else if strings.HasSuffix(trimmed, ":") {
 				flush()

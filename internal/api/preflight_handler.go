@@ -14,7 +14,7 @@ import (
 // handlePreflight godoc
 // @Summary     Validate slots before generation
 // @Description Validates slot data (playerYaml, required options) and returns proposed slot names.
-// @Description Stateless — does not create or modify any session record.
+// @Description Stateless - does not create or modify any session record.
 // @Tags        sessions
 // @Accept      json
 // @Produce     json
@@ -26,7 +26,7 @@ import (
 // @Router      /sessions/{sessionId}/preflight [post]
 func handlePreflight() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_ = chi.URLParam(r, "sessionId") // accepted but unused — endpoint is stateless
+		_ = chi.URLParam(r, "sessionId") // accepted but unused - endpoint is stateless
 
 		var req PreflightRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

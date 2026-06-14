@@ -858,7 +858,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Validates slot data (playerYaml, required options) and returns proposed slot names.\nStateless — does not create or modify any session record.",
+                "description": "Validates slot data (playerYaml, required options) and returns proposed slot names.\nStateless - does not create or modify any session record.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1182,7 +1182,7 @@ const docTemplate = `{
                     "example": "s3cr3t"
                 },
                 "serverPassword": {
-                    "description": "optional — leave empty for open games",
+                    "description": "optional - leave empty for open games",
                     "type": "string",
                     "example": ""
                 },
@@ -1479,7 +1479,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Archilan Orchestrateur API",
-	Description:      "Gestion des containers Bridge Archipelago — création, arrêt, suppression et monitoring.",
+	Description:      "Gestion des containers Bridge Archipelago - création, arrêt, suppression et monitoring.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

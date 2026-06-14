@@ -60,7 +60,7 @@ func main() {
 		}
 
 		options := templateparser.Parse(data)
-		fmt.Printf("\n=== %s — %d option(s) ===\n", obj.Key, len(options))
+		fmt.Printf("\n=== %s - %d option(s) ===\n", obj.Key, len(options))
 		for _, o := range options {
 			rng := ""
 			if o.RangeMin != nil {

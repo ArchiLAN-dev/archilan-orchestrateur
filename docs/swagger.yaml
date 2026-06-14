@@ -87,7 +87,7 @@ definitions:
         example: s3cr3t
         type: string
       serverPassword:
-        description: optional — leave empty for open games
+        description: optional - leave empty for open games
         example: ""
         type: string
       sessionId:
@@ -278,7 +278,7 @@ definitions:
     type: object
 info:
   contact: {}
-  description: Gestion des containers Bridge Archipelago — création, arrêt, suppression
+  description: Gestion des containers Bridge Archipelago - création, arrêt, suppression
     et monitoring.
   title: Archilan Orchestrateur API
   version: "1.0"
@@ -838,7 +838,7 @@ paths:
       - application/json
       description: |-
         Validates slot data (playerYaml, required options) and returns proposed slot names.
-        Stateless — does not create or modify any session record.
+        Stateless - does not create or modify any session record.
       parameters:
       - description: Session ID (informational only)
         in: path
