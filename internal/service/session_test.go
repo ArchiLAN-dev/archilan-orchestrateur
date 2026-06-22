@@ -99,6 +99,65 @@ func TestBuildPlayerYaml_emptyValues(t *testing.T) {
 	}
 }
 
+func TestServerOptions_marshalApplyRoundTrip(t *testing.T) {
+	cheat := false
+	hint := 25
+	loc := 2
+	shutdown := 1800
+	compat := 1
+	req := LaunchRequest{
+		SessionID:           "s1",
+		ServerPassword:      "pw",
+		AdminPassword:       "admin",
+		ReleaseMode:         "goal",
+		CollectMode:         "auto",
+		RemainingMode:       "goal",
+		CountdownMode:       "auto",
+		DisableItemCheat:    &cheat,
+		HintCost:            &hint,
+		LocationCheckPoints: &loc,
+		AutoShutdown:        &shutdown,
+		Compatibility:       &compat,
+	}
+
+	blob, err := marshalServerOptions(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Apply onto a fresh request, as relaunch-from-save does, and check every option survives.
+	got := LaunchRequest{SessionID: "s1", ServerPassword: "pw", AdminPassword: "admin"}
+	if err := applyServerOptions(&got, blob); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	if got.ReleaseMode != "goal" || got.CollectMode != "auto" || got.RemainingMode != "goal" || got.CountdownMode != "auto" {
+		t.Errorf("string modes not replayed: %+v", got)
+	}
+	if got.AutoShutdown == nil || *got.AutoShutdown != 1800 {
+		t.Errorf("autoShutdown = %v, want 1800", got.AutoShutdown)
+	}
+	if got.HintCost == nil || *got.HintCost != 25 {
+		t.Errorf("hintCost = %v, want 25", got.HintCost)
+	}
+	if got.LocationCheckPoints == nil || *got.LocationCheckPoints != 2 {
+		t.Errorf("locationCheckPoints = %v, want 2", got.LocationCheckPoints)
+	}
+	if got.DisableItemCheat == nil || *got.DisableItemCheat {
+		t.Errorf("disableItemCheat = %v, want false (a pointer-to-false must survive omitempty)", got.DisableItemCheat)
+	}
+	if got.Compatibility == nil || *got.Compatibility != 1 {
+		t.Errorf("compatibility = %v, want 1", got.Compatibility)
+	}
+}
+
+func TestApplyServerOptions_invalidBlobErrors(t *testing.T) {
+	req := LaunchRequest{SessionID: "s1"}
+	if err := applyServerOptions(&req, "not-json"); err == nil {
+		t.Fatal("expected an error on a corrupt blob")
+	}
+}
+
 func TestTarToZipAndBack_roundTrip(t *testing.T) {
 	// Build a Docker-style tar of /data/output with two files.
 	var tbuf bytes.Buffer

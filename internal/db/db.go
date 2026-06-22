@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -34,10 +35,29 @@ CREATE TABLE IF NOT EXISTS sessions (
 	output_file         TEXT,
 	generation_job_id   TEXT,
 	status_deadline     DATETIME,
+	server_options      TEXT,
 	created_at          DATETIME NOT NULL,
 	updated_at          DATETIME NOT NULL
 );
 `
+
+// migrations are idempotent ALTERs applied after the base schema, for columns added to
+// existing databases. SQLite has no "ADD COLUMN IF NOT EXISTS", so a duplicate-column
+// error means the column is already present and is safely ignored.
+var migrations = []string{
+	// server_options: the AP server_options JSON a session was launched with, replayed on
+	// relaunch-from-save so a resumed session keeps its exact config (auto_shutdown included).
+	`ALTER TABLE sessions ADD COLUMN server_options TEXT`,
+}
+
+func migrate(sqldb *sql.DB) error {
+	for _, stmt := range migrations {
+		if _, err := sqldb.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	return nil
+}
 
 func New(path string) (*DB, error) {
 	sqldb, err := sql.Open("sqlite", path)
@@ -46,6 +66,9 @@ func New(path string) (*DB, error) {
 	}
 	sqldb.SetMaxOpenConns(1)
 	if _, err := sqldb.Exec(schema); err != nil {
+		return nil, err
+	}
+	if err := migrate(sqldb); err != nil {
 		return nil, err
 	}
 	return &DB{sqldb}, nil

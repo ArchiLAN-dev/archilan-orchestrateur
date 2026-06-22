@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -71,6 +72,57 @@ type LaunchRequest struct {
 	LocationCheckPoints *int // >= 0
 	AutoShutdown        *int // >= 0 (seconds; 0 = never)
 	Compatibility       *int // 0|1|2
+}
+
+// serverOptionsJSON is the persisted form of a session's AP server_options. It is stored at
+// launch and replayed verbatim on relaunch-from-save, so a resumed session keeps the exact
+// config it was launched with - crucially auto_shutdown, without which an idle resumed session
+// would never stop again (and previously every other option reverted to its default on resume).
+type serverOptionsJSON struct {
+	ReleaseMode         string `json:"releaseMode,omitempty"`
+	CollectMode         string `json:"collectMode,omitempty"`
+	RemainingMode       string `json:"remainingMode,omitempty"`
+	CountdownMode       string `json:"countdownMode,omitempty"`
+	DisableItemCheat    *bool  `json:"disableItemCheat,omitempty"`
+	HintCost            *int   `json:"hintCost,omitempty"`
+	LocationCheckPoints *int   `json:"locationCheckPoints,omitempty"`
+	AutoShutdown        *int   `json:"autoShutdown,omitempty"`
+	Compatibility       *int   `json:"compatibility,omitempty"`
+}
+
+// marshalServerOptions serializes the optional AP server_options of a launch request for storage.
+func marshalServerOptions(req LaunchRequest) (string, error) {
+	b, err := json.Marshal(serverOptionsJSON{
+		ReleaseMode:         req.ReleaseMode,
+		CollectMode:         req.CollectMode,
+		RemainingMode:       req.RemainingMode,
+		CountdownMode:       req.CountdownMode,
+		DisableItemCheat:    req.DisableItemCheat,
+		HintCost:            req.HintCost,
+		LocationCheckPoints: req.LocationCheckPoints,
+		AutoShutdown:        req.AutoShutdown,
+		Compatibility:       req.Compatibility,
+	})
+	return string(b), err
+}
+
+// applyServerOptions deserializes a stored server_options blob onto a launch request, so a
+// relaunch replays the original config instead of falling back to launch-script defaults.
+func applyServerOptions(req *LaunchRequest, blob string) error {
+	var o serverOptionsJSON
+	if err := json.Unmarshal([]byte(blob), &o); err != nil {
+		return err
+	}
+	req.ReleaseMode = o.ReleaseMode
+	req.CollectMode = o.CollectMode
+	req.RemainingMode = o.RemainingMode
+	req.CountdownMode = o.CountdownMode
+	req.DisableItemCheat = o.DisableItemCheat
+	req.HintCost = o.HintCost
+	req.LocationCheckPoints = o.LocationCheckPoints
+	req.AutoShutdown = o.AutoShutdown
+	req.Compatibility = o.Compatibility
+	return nil
 }
 
 // validAPMode reports whether a release/collect mode value is accepted. The empty
@@ -368,6 +420,13 @@ func (s *Service) Launch(ctx context.Context, req LaunchRequest) error {
 		return ErrInvalidMode
 	}
 
+	// Persist the options so a later relaunch-from-save replays the exact same config.
+	if blob, err := marshalServerOptions(req); err != nil {
+		return fmt.Errorf("marshal server options: %w", err)
+	} else if err := s.db.SaveSessionServerOptions(req.SessionID, blob); err != nil {
+		return fmt.Errorf("save server options: %w", err)
+	}
+
 	bridgePort, err := s.pool.Acquire(req.SessionID)
 	if err != nil {
 		return err
@@ -600,6 +659,23 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 }
 
 // RestartSession attempts to restart a crashed session from its generated output file.
+// withStoredServerOptions augments a launch request with the server_options the session was
+// originally launched with, so a restart/relaunch replays that exact config instead of
+// reverting to launch-script defaults (which silently dropped auto_shutdown and every other
+// AP option on resume). A missing or corrupt blob leaves the request unchanged.
+func (s *Service) withStoredServerOptions(sessionID string, req LaunchRequest) (LaunchRequest, error) {
+	blob, err := s.db.GetSessionServerOptions(sessionID)
+	if err != nil {
+		return req, fmt.Errorf("get server options: %w", err)
+	}
+	if blob != nil {
+		if err := applyServerOptions(&req, *blob); err != nil {
+			s.log.Error("relaunch: invalid stored server options, using defaults", "session_id", sessionID, "err", err)
+		}
+	}
+	return req, nil
+}
+
 func (s *Service) RestartSession(ctx context.Context, sessionID string) error {
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil {
@@ -631,11 +707,15 @@ func (s *Service) RestartSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("reset session to generated: %w", err)
 	}
 
-	return s.Launch(ctx, LaunchRequest{
+	relaunch, err := s.withStoredServerOptions(sessionID, LaunchRequest{
 		SessionID:      sessionID,
 		ServerPassword: serverPassword,
 		AdminPassword:  adminPassword,
 	})
+	if err != nil {
+		return err
+	}
+	return s.Launch(ctx, relaunch)
 }
 
 // RelaunchFromSave resumes a session that went idle via Archipelago's auto_shutdown.
@@ -683,11 +763,15 @@ func (s *Service) RelaunchFromSave(ctx context.Context, sessionID string) error 
 		return fmt.Errorf("reset session to generated: %w", err)
 	}
 
-	return s.Launch(ctx, LaunchRequest{
+	relaunch, err := s.withStoredServerOptions(sessionID, LaunchRequest{
 		SessionID:      sessionID,
 		ServerPassword: serverPassword,
 		AdminPassword:  adminPassword,
 	})
+	if err != nil {
+		return err
+	}
+	return s.Launch(ctx, relaunch)
 }
 
 // GetSession returns the session with the given ID.

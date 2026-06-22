@@ -48,6 +48,33 @@ func (db *DB) GetSession(sessionID string) (*Session, error) {
 	return scanSession(row)
 }
 
+// SaveSessionServerOptions stores the AP server_options JSON a session was launched with,
+// so relaunch-from-save can replay the exact same config (auto_shutdown included).
+func (db *DB) SaveSessionServerOptions(sessionID, optionsJSON string) error {
+	_, err := db.Exec(
+		`UPDATE sessions SET server_options = ?, updated_at = ? WHERE session_id = ?`,
+		optionsJSON, time.Now().UTC(), sessionID,
+	)
+	return err
+}
+
+// GetSessionServerOptions returns the stored server_options JSON blob, or nil if the session
+// has none (never launched with options, or launched before this column existed).
+func (db *DB) GetSessionServerOptions(sessionID string) (*string, error) {
+	var opts sql.NullString
+	err := db.QueryRow(`SELECT server_options FROM sessions WHERE session_id = ?`, sessionID).Scan(&opts)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !opts.Valid {
+		return nil, nil
+	}
+	return &opts.String, nil
+}
+
 // ListSessions returns all sessions ordered by creation date descending.
 func (db *DB) ListSessions() ([]*Session, error) {
 	rows, err := db.Query(`
