@@ -70,10 +70,18 @@ func (s *Service) sweepTransit(ctx context.Context) {
 			})
 
 		case "launching":
-			// No container to inspect for launching (it's a goroutine)
+			// The launch goroutine is presumed dead (e.g. the process restarted), so it will not
+			// run its own cleanup. Stop any containers it managed to create before releasing the
+			// port: their IDs are only persisted once the session reaches "running", so address them
+			// by their well-known names. A container left running keeps its host port bound at the
+			// Docker level and would collide with the next session that Acquires the freed port.
 			s.log.Warn("sweeper: launch deadline exceeded, crashing session", "session_id", sess.SessionID)
+			_ = s.docker.Stop(ctx, fmt.Sprintf("archilan-bridge-%s", sess.SessionID))
+			_ = s.docker.Stop(ctx, fmt.Sprintf("ap-server-%s", sess.SessionID))
 			if sess.BridgePort != nil {
-				s.pool.Release(*sess.BridgePort)
+				// Guarded release: if the stuck launch goroutine is still alive and races us, only
+				// the owner-matching release wins, so a freed-then-reassigned port is never stolen.
+				s.pool.ReleaseFor(*sess.BridgePort, sess.SessionID)
 			}
 			_ = s.db.UpdateSessionCrashed(sess.SessionID)
 			s.webhook.Send(ctx, webhook.Payload{
@@ -151,8 +159,20 @@ func (s *Service) idleFromAutoShutdown(ctx context.Context, sess *db.Session) {
 // crashRunningSession handles a running session whose AP server died unexpectedly.
 func (s *Service) crashRunningSession(ctx context.Context, sess *db.Session, reason string) {
 	s.log.Warn("sweeper: AP server died, crashing session", "session_id", sess.SessionID)
+	// Stop both containers BEFORE releasing the port. A crashed session keeps its containers
+	// for log inspection, but a still-running bridge - or the AP server's own on-failure restart
+	// loop - keeps the host port bound at the Docker level. Releasing the port to the pool while
+	// the old containers still hold it lets the next session Acquire that exact port and then
+	// collide on bind ("port already in use"). Stopping (not removing) frees the host binding and
+	// halts the restart policy while preserving the containers for diagnostics.
+	if sess.BridgeContainerID != nil {
+		_ = s.docker.Stop(ctx, *sess.BridgeContainerID)
+	}
+	if sess.APContainerID != nil {
+		_ = s.docker.Stop(ctx, *sess.APContainerID)
+	}
 	if sess.BridgePort != nil {
-		s.pool.Release(*sess.BridgePort)
+		s.pool.ReleaseFor(*sess.BridgePort, sess.SessionID)
 	}
 	_ = s.db.UpdateSessionCrashed(sess.SessionID)
 	s.webhook.Send(ctx, webhook.Payload{

@@ -451,7 +451,9 @@ func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 
 	crash := func(errMsg string) {
 		s.log.Error("startSession crashed", "session_id", sessionID, "err", errMsg)
-		s.pool.Release(bridgePort)
+		// Guarded release: the sweeper may have already crashed this launch on deadline and the
+		// port may have been re-Acquired by another session. Only release if we still own it.
+		s.pool.ReleaseFor(bridgePort, sessionID)
 		_ = s.db.UpdateSessionCrashed(sessionID)
 		s.webhook.Send(ctx, webhook.Payload{
 			Event:     "session.crashed",
