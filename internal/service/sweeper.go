@@ -128,13 +128,16 @@ func apExitOutcome(info *docker.ContainerStatus) string {
 }
 
 // idleFromAutoShutdown handles an AP server that exited cleanly via its auto_shutdown:
-// stop the now-idle bridge, release the port, keep the volume (it holds the .apsave), and
-// tell the API the session is idle (resumable via relaunch-from-save).
+// stop the now-idle bridge, remove both containers, release the port, keep the volume (it
+// holds the .apsave), and tell the API the session is idle (resumable via relaunch-from-save).
 func (s *Service) idleFromAutoShutdown(ctx context.Context, sess *db.Session) {
 	s.log.Info("sweeper: AP auto_shutdown, marking session idle", "session_id", sess.SessionID)
 	if sess.BridgeContainerID != nil {
 		_ = s.docker.Stop(ctx, *sess.BridgeContainerID)
 	}
+	// Remove the idle containers (the AP already exited) but keep the volume - its .apsave is
+	// what relaunch-from-save resumes from.
+	s.removeSessionContainers(ctx, sess)
 	if sess.BridgePort != nil {
 		s.pool.Release(*sess.BridgePort)
 	}

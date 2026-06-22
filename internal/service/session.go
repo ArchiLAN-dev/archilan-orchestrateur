@@ -605,7 +605,24 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 	return s.Launch(ctx, req)
 }
 
-// StopSession stops both containers and releases the port, marking the session as stopped.
+// removeSessionContainers force-removes a session's bridge and AP server containers while
+// keeping the data volume, so the session stays resumable from its .apsave. Best-effort:
+// failures are logged, never propagated, so cleanup cannot block a stop/idle transition.
+// Crashed sessions are intentionally NOT cleaned up here - their containers are kept for
+// log inspection until an explicit DeleteSession.
+func (s *Service) removeSessionContainers(ctx context.Context, sess *db.Session) {
+	if sess.BridgeContainerID != nil {
+		if err := s.docker.Remove(ctx, *sess.BridgeContainerID); err != nil {
+			s.log.Warn("cleanup: remove bridge container failed", "session_id", sess.SessionID, "err", err)
+		}
+	}
+	if err := s.docker.RemoveAPServer(ctx, sess.SessionID); err != nil {
+		s.log.Warn("cleanup: remove AP server failed", "session_id", sess.SessionID, "err", err)
+	}
+}
+
+// StopSession stops both containers, removes them (the volume is kept so the session stays
+// resumable from its save), releases the port, and marks the session as stopped.
 func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	sess, err := s.db.GetSession(sessionID)
 	if err != nil {
@@ -621,6 +638,8 @@ func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	if sess.APContainerID != nil {
 		_ = s.docker.Stop(ctx, *sess.APContainerID)
 	}
+	// Remove the now-stopped containers (keep the volume so the session stays resumable).
+	s.removeSessionContainers(ctx, sess)
 	if sess.BridgePort != nil {
 		s.pool.Release(*sess.BridgePort)
 	}
