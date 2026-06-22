@@ -643,7 +643,11 @@ func (s *Service) StopSession(ctx context.Context, sessionID string) error {
 	// Remove the now-stopped containers (keep the volume so the session stays resumable).
 	s.removeSessionContainers(ctx, sess)
 	if sess.BridgePort != nil {
-		s.pool.Release(*sess.BridgePort)
+		// Owner-guarded: StopSession also runs as best-effort cleanup inside RestartSession on an
+		// already-crashed session, whose port was released on crash and may have been re-Acquired
+		// by another session. The stale bridge_port persists on the record, so an unguarded release
+		// would steal the live owner's port. ReleaseFor only frees it if we still hold it.
+		s.pool.ReleaseFor(*sess.BridgePort, sessionID)
 	}
 
 	if err := s.db.UpdateSessionStopped(sessionID); err != nil {
@@ -672,8 +676,11 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	_ = s.docker.RemoveAPServer(ctx, sessionID)
 	_ = s.docker.RemoveVolume(ctx, sessionID)
 
-	if sess.BridgePort != nil && sess.Status != "stopped" && sess.Status != "crashed" {
-		s.pool.Release(*sess.BridgePort)
+	if sess.BridgePort != nil {
+		// Owner-guarded release replaces a status-string guard: stopped/crashed sessions already
+		// released their port (it may now belong to another session), so ReleaseFor no-ops for them
+		// and only frees the port for a session that still holds it.
+		s.pool.ReleaseFor(*sess.BridgePort, sessionID)
 	}
 
 	return s.db.DeleteSession(sessionID)
@@ -768,7 +775,10 @@ func (s *Service) RelaunchFromSave(ctx context.Context, sessionID string) error 
 		_ = s.docker.Remove(ctx, *sess.BridgeContainerID)
 	}
 	if sess.BridgePort != nil {
-		s.pool.Release(*sess.BridgePort)
+		// An idle/stopped session already released its port on the idle/stop transition; its stale
+		// bridge_port may now belong to another session. Owner-guard so we never free a live port
+		// out from under it. Launch below Acquires a fresh port regardless.
+		s.pool.ReleaseFor(*sess.BridgePort, sess.SessionID)
 	}
 
 	serverPassword := ""

@@ -147,7 +147,7 @@ func (s *Service) idleFromAutoShutdown(ctx context.Context, sess *db.Session) {
 	// what relaunch-from-save resumes from.
 	s.removeSessionContainers(ctx, sess)
 	if sess.BridgePort != nil {
-		s.pool.Release(*sess.BridgePort)
+		s.pool.ReleaseFor(*sess.BridgePort, sess.SessionID)
 	}
 	_ = s.db.UpdateSessionStopped(sess.SessionID)
 	s.webhook.Send(ctx, webhook.Payload{
