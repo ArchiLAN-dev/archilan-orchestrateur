@@ -14,6 +14,13 @@ definitions:
           $ref: '#/definitions/api.ApworldEntry'
         type: array
     type: object
+  api.ApworldLocationsResponse:
+    properties:
+      locations:
+        items:
+          type: string
+        type: array
+    type: object
   api.ApworldOptionsResponse:
     properties:
       options:
@@ -336,6 +343,28 @@ paths:
       security:
       - BearerAuth: []
       summary: Upload an apworld and generate its YAML template
+      tags:
+      - apworlds
+  /apworlds/{hash}/locations:
+    get:
+      description: Returns the static location list introspected from the apworld's
+        World class (location_name_to_id keys). Empty until the apworld has been introspected.
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ApworldLocationsResponse'
+      security:
+      - BearerAuth: []
+      summary: Get apworld static location names
       tags:
       - apworlds
   /apworlds/{hash}/options:

@@ -237,6 +237,26 @@ func handleGetApworldOptions(svc *service.Service) http.HandlerFunc {
 	}
 }
 
+// handleGetApworldLocations godoc
+// @Summary     Get apworld static location names
+// @Description Returns the static location list introspected from the apworld's World class (location_name_to_id keys). Empty until the apworld has been introspected.
+// @Tags        apworlds
+// @Param       hash path string true "Apworld SHA-256 hash"
+// @Produce     json
+// @Success     200 {object} ApworldLocationsResponse
+// @Security    BearerAuth
+// @Router      /apworlds/{hash}/locations [get]
+func handleGetApworldLocations(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hash := chi.URLParam(r, "hash")
+		locations := svc.GetApworldLocations(r.Context(), hash)
+		if locations == nil {
+			locations = []string{}
+		}
+		writeJSON(w, http.StatusOK, ApworldLocationsResponse{Locations: locations})
+	}
+}
+
 // handleListContainers godoc
 // @Summary     List containers
 // @Description Returns all managed Bridge containers

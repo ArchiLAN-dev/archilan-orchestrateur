@@ -38,6 +38,7 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 		r.Post("/apworlds", handleUploadApworld(svc))
 		r.Get("/apworlds/{hash}/yaml", handleGetApworldTemplate(svc))
 		r.Get("/apworlds/{hash}/options", handleGetApworldOptions(svc))
+		r.Get("/apworlds/{hash}/locations", handleGetApworldLocations(svc))
 
 		r.Get("/containers", handleListContainers(svc))
 		r.Post("/containers", handleCreateContainer(svc))

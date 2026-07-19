@@ -145,6 +145,26 @@ func (s *Service) GetApworldOptionTypes(ctx context.Context, hash string) map[st
 	return parsed.Options
 }
 
+// GetApworldLocations returns the introspected static location names for an apworld,
+// read from the same introspection sidecar as the option types (story 9.25 pipeline).
+// Returns nil (no error) if storage is not configured or the sidecar does not exist yet.
+func (s *Service) GetApworldLocations(ctx context.Context, hash string) []string {
+	if s.storage == nil {
+		return nil
+	}
+	raw, found, err := s.storage.DownloadApworldOptionTypes(ctx, hash)
+	if err != nil || !found {
+		return nil
+	}
+	var parsed struct {
+		Locations []string `json:"locations"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil
+	}
+	return parsed.Locations
+}
+
 // ListApworlds returns metadata for all uploaded apworlds that have a .json sidecar.
 func (s *Service) ListApworlds(ctx context.Context) ([]storage.ApworldMeta, error) {
 	if s.storage == nil {
