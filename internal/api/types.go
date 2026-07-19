@@ -66,6 +66,13 @@ type ApworldOptionsResponse struct {
 	Options []TemplateOption `json:"options"`
 }
 
+// ApworldLocationsResponse is returned by GET /apworlds/{hash}/locations.
+// The static location list from the apworld's World class (introspection); empty
+// when the apworld has not been introspected yet or exposes no locations.
+type ApworldLocationsResponse struct {
+	Locations []string `json:"locations"`
+}
+
 // UploadApworldResponse is returned on successful apworld upload.
 type UploadApworldResponse struct {
 	Hash    string           `json:"hash"    example:"0fd8936279e053df96110fcb7898447a9fb8655343b8f26c22108d79a73b4e21"`

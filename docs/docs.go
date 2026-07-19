@@ -99,6 +99,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/apworlds/{hash}/locations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the static location list introspected from the apworld's World class (location_name_to_id keys). Empty until the apworld has been introspected.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Get apworld static location names",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldLocationsResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/apworlds/{hash}/options": {
             "get": {
                 "security": [
@@ -1067,6 +1101,17 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/api.ApworldEntry"
+                    }
+                }
+            }
+        },
+        "api.ApworldLocationsResponse": {
+            "type": "object",
+            "properties": {
+                "locations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 }
             }
