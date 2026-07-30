@@ -6,6 +6,8 @@ definitions:
         type: string
       hash:
         type: string
+      preflight:
+        $ref: '#/definitions/api.ApworldPreflight'
     type: object
   api.ApworldListResponse:
     properties:
@@ -27,6 +29,27 @@ definitions:
         items:
           $ref: '#/definitions/api.TemplateOption'
         type: array
+    type: object
+  api.ApworldPreflight:
+    properties:
+      checkedAt:
+        example: "2026-07-30T12:00:00Z"
+        type: string
+      error:
+        type: string
+      overridden:
+        type: boolean
+      status:
+        description: pending | passed | failed | skipped
+        example: passed
+        type: string
+    type: object
+  api.ApworldPreflightResponse:
+    properties:
+      hash:
+        type: string
+      preflight:
+        $ref: '#/definitions/api.ApworldPreflight'
     type: object
   api.ConfigureResponse:
     properties:
@@ -170,6 +193,11 @@ definitions:
         type: string
       serverPassword:
         type: string
+    type: object
+  api.OverridePreflightRequest:
+    properties:
+      overridden:
+        type: boolean
     type: object
   api.PreflightRequest:
     properties:
@@ -395,6 +423,78 @@ paths:
       security:
       - BearerAuth: []
       summary: Get apworld parsed options
+      tags:
+      - apworlds
+  /apworlds/{hash}/preflight:
+    post:
+      description: Marks the verdict pending and re-runs the solo test generation
+        asynchronously (story 9.38).
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.ApworldPreflightResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Re-run the apworld preflight test generation
+      tags:
+      - apworlds
+  /apworlds/{hash}/preflight-override:
+    post:
+      consumes:
+      - application/json
+      description: Toggles the admin override on the preflight verdict (story 9.38
+        AC4).
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      - description: Override flag
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.OverridePreflightRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ApworldPreflightResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Force-allow (or re-block) a failed apworld preflight
       tags:
       - apworlds
   /apworlds/{hash}/yaml:

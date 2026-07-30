@@ -92,9 +92,16 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, 
 	if game == "" {
 		game = extractGameFromZip(data)
 	}
+	// A re-upload of the same hash re-runs the preflight (story 9.38 AC5), but the
+	// admin's force-allow override survives: read it back before rewriting the sidecar.
+	overridden := false
+	if existing, metaErr := s.storage.GetApworldMeta(ctx, hash); metaErr == nil && existing.Preflight != nil {
+		overridden = existing.Preflight.Overridden
+	}
 	if metaErr := s.storage.UploadApworldMeta(ctx, storage.ApworldMeta{
-		Hash: hash,
-		Game: game,
+		Hash:      hash,
+		Game:      game,
+		Preflight: &storage.ApworldPreflight{Status: PreflightStatusPending, Overridden: overridden},
 	}); metaErr != nil {
 		s.log.Warn("failed to store apworld metadata", "hash", hash, "err", metaErr)
 	}
@@ -109,6 +116,13 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, 
 		}
 		if storeErr := s.storage.UploadApworldOptionTypes(bgCtx, hash, typesJSON); storeErr != nil {
 			s.log.Warn("failed to store option types", "hash", hash, "err", storeErr)
+		}
+	}()
+
+	// Solo test generation in background (story 9.38); failure is non-fatal for the upload.
+	go func() {
+		if _, pfErr := s.RunApworldPreflight(context.Background(), hash); pfErr != nil {
+			s.log.Warn("apworld preflight did not complete", "hash", hash, "err", pfErr)
 		}
 	}()
 

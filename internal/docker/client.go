@@ -504,6 +504,55 @@ func (c *Client) GenerateTemplate(ctx context.Context, apworldData []byte, hash 
 	return bytes.TrimSpace(yamlData), nil
 }
 
+// PreflightGenerate runs a one-shot solo test generation for an apworld with its default
+// template YAML (story 9.38): same image and generate_multiworld.py entry point as
+// production generation, network disabled (createOneShot), bounded by ctx. Returns nil
+// when the generation succeeds; on failure the error carries the stderr tail, which ends
+// with the Python traceback.
+func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, templateYaml []byte) error {
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "worlds/", Mode: 0755})
+	_ = tw.WriteHeader(&tar.Header{Name: "worlds/" + hash + ".apworld", Mode: 0644, Size: int64(len(apworldData))})
+	_, _ = tw.Write(apworldData)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "yamls/", Mode: 0755})
+	_ = tw.WriteHeader(&tar.Header{Name: "yamls/preflight.yaml", Mode: 0644, Size: int64(len(templateYaml))})
+	_, _ = tw.Write(templateYaml)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
+	_ = tw.Close()
+
+	cmd := []string{
+		"python3", "/usr/local/bin/generate_multiworld.py",
+		"--player_files_path", "/tmp/yamls",
+		"--outputpath", "/tmp/output",
+		"--world_directory", "/tmp/worlds",
+	}
+	containerID, err := c.createOneShot(ctx, c.cfg.APImage, cmd)
+	if err != nil {
+		return fmt.Errorf("create preflight container: %w", err)
+	}
+	defer func() { _ = c.Remove(context.WithoutCancel(ctx), containerID) }()
+
+	if err := c.putArchiveTo(ctx, containerID, "/tmp", &tarBuf); err != nil {
+		return fmt.Errorf("copy apworld to preflight container: %w", err)
+	}
+
+	if err := c.startContainer(ctx, containerID); err != nil {
+		return fmt.Errorf("start preflight container: %w", err)
+	}
+
+	exitCode, err := c.waitContainer(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("wait for preflight container: %w", err)
+	}
+
+	if exitCode != 0 {
+		stderr, _ := c.containerLogs(ctx, containerID, false, true)
+		return fmt.Errorf("preflight generation exited %d: %s", exitCode, bytes.TrimSpace(stderr))
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Event stream
 // ---------------------------------------------------------------------------
