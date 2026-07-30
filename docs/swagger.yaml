@@ -279,6 +279,24 @@ definitions:
         additionalProperties: {}
         type: object
     type: object
+  api.SlotPreflightResponse:
+    properties:
+      error:
+        type: string
+      id:
+        type: string
+      status:
+        description: pending | passed | failed
+        example: pending
+        type: string
+    type: object
+  api.StartSlotPreflightRequest:
+    properties:
+      apworldHash:
+        type: string
+      playerYaml:
+        type: string
+    type: object
   api.TemplateOption:
     properties:
       defaultValue: {}
@@ -697,6 +715,65 @@ paths:
       summary: Health check
       tags:
       - system
+  /preflight-generations:
+    post:
+      consumes:
+      - application/json
+      description: Queues a solo test generation of the given player YAML (story 9.42);
+        poll GET /preflight-generations/{id}.
+      parameters:
+      - description: Player YAML and optional custom apworld hash
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.StartSlotPreflightRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.SlotPreflightResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start a solo preflight generation for one player YAML
+      tags:
+      - preflight
+  /preflight-generations/{id}:
+    get:
+      description: Returns the job state; 404 for unknown or expired ids (poller must
+        treat as unknown).
+      parameters:
+      - description: Job id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SlotPreflightResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the state of a slot preflight generation
+      tags:
+      - preflight
   /sessions/{sessionId}:
     delete:
       description: Force-removes all resources for a session (containers, volume,

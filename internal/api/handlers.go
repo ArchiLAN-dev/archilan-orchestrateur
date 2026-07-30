@@ -229,6 +229,65 @@ func handleOverrideApworldPreflight(svc *service.Service) http.HandlerFunc {
 	}
 }
 
+// handleStartSlotPreflight godoc
+// @Summary     Start a solo preflight generation for one player YAML
+// @Description Queues a solo test generation of the given player YAML (story 9.42); poll GET /preflight-generations/{id}.
+// @Tags        preflight
+// @Param       body body StartSlotPreflightRequest true "Player YAML and optional custom apworld hash"
+// @Accept      json
+// @Produce     json
+// @Success     202 {object} SlotPreflightResponse
+// @Failure     400 {object} ErrorResponse
+// @Failure     503 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /preflight-generations [post]
+func handleStartSlotPreflight(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req StartSlotPreflightRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if req.PlayerYaml == "" {
+			writeError(w, http.StatusBadRequest, "playerYaml is required")
+			return
+		}
+
+		id, err := svc.StartSlotPreflight([]byte(req.PlayerYaml), req.ApworldHash)
+		if errors.Is(err, service.ErrStorageNotConfigured) {
+			writeError(w, http.StatusServiceUnavailable, "storage not configured")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, SlotPreflightResponse{ID: id, Status: service.SlotPreflightPending})
+	}
+}
+
+// handleGetSlotPreflight godoc
+// @Summary     Get the state of a slot preflight generation
+// @Description Returns the job state; 404 for unknown or expired ids (poller must treat as unknown).
+// @Tags        preflight
+// @Param       id path string true "Job id"
+// @Produce     json
+// @Success     200 {object} SlotPreflightResponse
+// @Failure     404 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /preflight-generations/{id} [get]
+func handleGetSlotPreflight(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		job, ok := svc.GetSlotPreflight(id)
+		if !ok {
+			writeError(w, http.StatusNotFound, "preflight job not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, SlotPreflightResponse{ID: id, Status: job.Status, Error: job.Error})
+	}
+}
+
 // handleGetApworldTemplate godoc
 // @Summary     Get apworld default YAML template
 // @Description Returns the default YAML template for the given apworld hash

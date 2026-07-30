@@ -598,6 +598,97 @@
                 }
             }
         },
+        "/preflight-generations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Queues a solo test generation of the given player YAML (story 9.42); poll GET /preflight-generations/{id}.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preflight"
+                ],
+                "summary": "Start a solo preflight generation for one player YAML",
+                "parameters": [
+                    {
+                        "description": "Player YAML and optional custom apworld hash",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.StartSlotPreflightRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/api.SlotPreflightResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/preflight-generations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the job state; 404 for unknown or expired ids (poller must treat as unknown).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "preflight"
+                ],
+                "summary": "Get the state of a slot preflight generation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.SlotPreflightResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{sessionId}": {
             "get": {
                 "security": [
@@ -1600,6 +1691,33 @@
                 "values": {
                     "type": "object",
                     "additionalProperties": {}
+                }
+            }
+        },
+        "api.SlotPreflightResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "pending | passed | failed",
+                    "type": "string",
+                    "example": "pending"
+                }
+            }
+        },
+        "api.StartSlotPreflightRequest": {
+            "type": "object",
+            "properties": {
+                "apworldHash": {
+                    "type": "string"
+                },
+                "playerYaml": {
+                    "type": "string"
                 }
             }
         },
