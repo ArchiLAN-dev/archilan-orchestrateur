@@ -50,15 +50,35 @@ type TemplateOption struct {
 	RangeMax     *int           `json:"rangeMax,omitempty"`
 }
 
+// ApworldPreflight is the upload-time solo test-generation verdict (story 9.38).
+type ApworldPreflight struct {
+	Status     string `json:"status" example:"passed"` // pending | passed | failed | skipped
+	Error      string `json:"error,omitempty"`
+	CheckedAt  string `json:"checkedAt,omitempty" example:"2026-07-30T12:00:00Z"`
+	Overridden bool   `json:"overridden"`
+}
+
 // ApworldEntry represents a single uploaded apworld with its game metadata.
 type ApworldEntry struct {
-	Hash string `json:"hash"`
-	Game string `json:"game"`
+	Hash      string            `json:"hash"`
+	Game      string            `json:"game"`
+	Preflight *ApworldPreflight `json:"preflight,omitempty"`
 }
 
 // ApworldListResponse is returned by GET /apworlds.
 type ApworldListResponse struct {
 	Apworlds []ApworldEntry `json:"apworlds"`
+}
+
+// ApworldPreflightResponse is returned by the preflight re-run and override endpoints.
+type ApworldPreflightResponse struct {
+	Hash      string            `json:"hash"`
+	Preflight *ApworldPreflight `json:"preflight"`
+}
+
+// OverridePreflightRequest is the body of POST /apworlds/{hash}/preflight-override.
+type OverridePreflightRequest struct {
+	Overridden bool `json:"overridden"`
 }
 
 // ApworldOptionsResponse is returned by GET /apworlds/{hash}/options.

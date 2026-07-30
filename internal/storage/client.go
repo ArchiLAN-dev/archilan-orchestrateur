@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 
@@ -31,10 +32,21 @@ type ApworldRef struct {
 	Filename string `json:"filename"`
 }
 
-// ApworldMeta holds the game name for an uploaded apworld.
+// ApworldPreflight is the upload-time solo test-generation verdict (story 9.38).
+// Status: "pending" | "passed" | "failed" | "skipped" (no template to test with).
+// Overridden is the admin's "force allow" escape hatch for a failed verdict and
+// must survive re-checks (only the override endpoint toggles it).
+type ApworldPreflight struct {
+	Status     string `json:"status,omitempty"`
+	Error      string `json:"error,omitempty"`
+	CheckedAt  string `json:"checkedAt,omitempty"` // RFC3339
+	Overridden bool   `json:"overridden,omitempty"`
+}
+
 type ApworldMeta struct {
-	Hash string `json:"hash"`
-	Game string `json:"game"`
+	Hash      string            `json:"hash"`
+	Game      string            `json:"game"`
+	Preflight *ApworldPreflight `json:"preflight,omitempty"`
 }
 
 // Manifest is stored at sessions/{sessionId}/manifest.json by the Symfony API.
@@ -201,6 +213,25 @@ func (c *Client) ListApworlds(ctx context.Context) ([]ApworldMeta, error) {
 // GetApworldMeta downloads the {hash}.json sidecar for an apworld.
 func (c *Client) GetApworldMeta(ctx context.Context, hash string) (ApworldMeta, error) {
 	return c.downloadApworldMeta(ctx, hash+".json")
+}
+
+// MutateApworldPreflight read-modify-writes the preflight verdict inside the {hash}.json
+// sidecar (story 9.38). The mutate callback receives the current verdict (empty struct when
+// none was recorded yet) so callers can update the status while preserving the other fields
+// (notably Overridden).
+func (c *Client) MutateApworldPreflight(ctx context.Context, hash string, mutate func(p *ApworldPreflight)) (ApworldMeta, error) {
+	meta, err := c.GetApworldMeta(ctx, hash)
+	if err != nil {
+		return ApworldMeta{}, fmt.Errorf("read apworld meta %s: %w", hash, err)
+	}
+	if meta.Preflight == nil {
+		meta.Preflight = &ApworldPreflight{}
+	}
+	mutate(meta.Preflight)
+	if err := c.UploadApworldMeta(ctx, meta); err != nil {
+		return ApworldMeta{}, fmt.Errorf("write apworld meta %s: %w", hash, err)
+	}
+	return meta, nil
 }
 
 func (c *Client) downloadApworldMeta(ctx context.Context, key string) (ApworldMeta, error) {

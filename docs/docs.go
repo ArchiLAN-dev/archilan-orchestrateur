@@ -179,6 +179,116 @@ const docTemplate = `{
                 }
             }
         },
+        "/apworlds/{hash}/preflight": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks the verdict pending and re-runs the solo test generation asynchronously (story 9.38).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Re-run the apworld preflight test generation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldPreflightResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/apworlds/{hash}/preflight-override": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Toggles the admin override on the preflight verdict (story 9.38 AC4).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Force-allow (or re-block) a failed apworld preflight",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Override flag",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.OverridePreflightRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldPreflightResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/apworlds/{hash}/yaml": {
             "get": {
                 "security": [
@@ -1091,6 +1201,9 @@ const docTemplate = `{
                 },
                 "hash": {
                     "type": "string"
+                },
+                "preflight": {
+                    "$ref": "#/definitions/api.ApworldPreflight"
                 }
             }
         },
@@ -1124,6 +1237,37 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/api.TemplateOption"
                     }
+                }
+            }
+        },
+        "api.ApworldPreflight": {
+            "type": "object",
+            "properties": {
+                "checkedAt": {
+                    "type": "string",
+                    "example": "2026-07-30T12:00:00Z"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "overridden": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "description": "pending | passed | failed | skipped",
+                    "type": "string",
+                    "example": "passed"
+                }
+            }
+        },
+        "api.ApworldPreflightResponse": {
+            "type": "object",
+            "properties": {
+                "hash": {
+                    "type": "string"
+                },
+                "preflight": {
+                    "$ref": "#/definitions/api.ApworldPreflight"
                 }
             }
         },
@@ -1333,6 +1477,14 @@ const docTemplate = `{
                 },
                 "serverPassword": {
                     "type": "string"
+                }
+            }
+        },
+        "api.OverridePreflightRequest": {
+            "type": "object",
+            "properties": {
+                "overridden": {
+                    "type": "boolean"
                 }
             }
         },

@@ -11,6 +11,7 @@ import (
 
 	"archilan.fr/orchestrateur/internal/db"
 	"archilan.fr/orchestrateur/internal/service"
+	"archilan.fr/orchestrateur/internal/storage"
 	"archilan.fr/orchestrateur/internal/templateparser"
 )
 
@@ -137,11 +138,94 @@ func handleListApworlds(svc *service.Service) http.HandlerFunc {
 		resp := ApworldListResponse{Apworlds: make([]ApworldEntry, 0, len(entries))}
 		for _, e := range entries {
 			resp.Apworlds = append(resp.Apworlds, ApworldEntry{
-				Hash: e.Hash,
-				Game: e.Game,
+				Hash:      e.Hash,
+				Game:      e.Game,
+				Preflight: apiPreflight(e.Preflight),
 			})
 		}
 		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+func apiPreflight(p *storage.ApworldPreflight) *ApworldPreflight {
+	if p == nil {
+		return nil
+	}
+	return &ApworldPreflight{
+		Status:     p.Status,
+		Error:      p.Error,
+		CheckedAt:  p.CheckedAt,
+		Overridden: p.Overridden,
+	}
+}
+
+// handleRunApworldPreflight godoc
+// @Summary     Re-run the apworld preflight test generation
+// @Description Marks the verdict pending and re-runs the solo test generation asynchronously (story 9.38).
+// @Tags        apworlds
+// @Param       hash path string true "Apworld SHA-256 hash"
+// @Produce     json
+// @Success     202 {object} ApworldPreflightResponse
+// @Failure     404 {object} ErrorResponse
+// @Failure     503 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /apworlds/{hash}/preflight [post]
+func handleRunApworldPreflight(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hash := chi.URLParam(r, "hash")
+		meta, err := svc.GetApworldMetaByHash(r.Context(), hash)
+		if errors.Is(err, service.ErrStorageNotConfigured) {
+			writeError(w, http.StatusServiceUnavailable, "storage not configured")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusNotFound, "apworld not found")
+			return
+		}
+
+		svc.StartApworldPreflight(hash)
+
+		pending := &ApworldPreflight{Status: service.PreflightStatusPending}
+		if meta.Preflight != nil {
+			pending.Overridden = meta.Preflight.Overridden
+		}
+		writeJSON(w, http.StatusAccepted, ApworldPreflightResponse{Hash: hash, Preflight: pending})
+	}
+}
+
+// handleOverrideApworldPreflight godoc
+// @Summary     Force-allow (or re-block) a failed apworld preflight
+// @Description Toggles the admin override on the preflight verdict (story 9.38 AC4).
+// @Tags        apworlds
+// @Param       hash path string true "Apworld SHA-256 hash"
+// @Param       body body OverridePreflightRequest true "Override flag"
+// @Accept      json
+// @Produce     json
+// @Success     200 {object} ApworldPreflightResponse
+// @Failure     400 {object} ErrorResponse
+// @Failure     404 {object} ErrorResponse
+// @Failure     503 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /apworlds/{hash}/preflight-override [post]
+func handleOverrideApworldPreflight(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hash := chi.URLParam(r, "hash")
+		var req OverridePreflightRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		meta, err := svc.OverrideApworldPreflight(r.Context(), hash, req.Overridden)
+		if errors.Is(err, service.ErrStorageNotConfigured) {
+			writeError(w, http.StatusServiceUnavailable, "storage not configured")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusNotFound, "apworld not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, ApworldPreflightResponse{Hash: hash, Preflight: apiPreflight(meta.Preflight)})
 	}
 }
 
