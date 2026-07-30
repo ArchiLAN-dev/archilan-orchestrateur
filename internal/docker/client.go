@@ -504,20 +504,23 @@ func (c *Client) GenerateTemplate(ctx context.Context, apworldData []byte, hash 
 	return bytes.TrimSpace(yamlData), nil
 }
 
-// PreflightGenerate runs a one-shot solo test generation for an apworld with its default
-// template YAML (story 9.38): same image and generate_multiworld.py entry point as
-// production generation, network disabled (createOneShot), bounded by ctx. Returns nil
-// when the generation succeeds; on failure the error carries the stderr tail, which ends
-// with the Python traceback.
-func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, templateYaml []byte) error {
+// PreflightGenerate runs a one-shot solo test generation with the given player YAML
+// (stories 9.38/9.42): same image and generate_multiworld.py entry point as production
+// generation, network disabled (createOneShot), bounded by ctx. apworldData may be empty
+// for official worlds already bundled in the image (the worlds/ directory is then omitted).
+// Returns nil when the generation succeeds; on failure the error carries the stderr tail,
+// which ends with the Python traceback.
+func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte) error {
 	var tarBuf bytes.Buffer
 	tw := tar.NewWriter(&tarBuf)
-	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "worlds/", Mode: 0755})
-	_ = tw.WriteHeader(&tar.Header{Name: "worlds/" + hash + ".apworld", Mode: 0644, Size: int64(len(apworldData))})
-	_, _ = tw.Write(apworldData)
+	if len(apworldData) > 0 {
+		_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "worlds/", Mode: 0755})
+		_ = tw.WriteHeader(&tar.Header{Name: "worlds/" + hash + ".apworld", Mode: 0644, Size: int64(len(apworldData))})
+		_, _ = tw.Write(apworldData)
+	}
 	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "yamls/", Mode: 0755})
-	_ = tw.WriteHeader(&tar.Header{Name: "yamls/preflight.yaml", Mode: 0644, Size: int64(len(templateYaml))})
-	_, _ = tw.Write(templateYaml)
+	_ = tw.WriteHeader(&tar.Header{Name: "yamls/preflight.yaml", Mode: 0644, Size: int64(len(playerYaml))})
+	_, _ = tw.Write(playerYaml)
 	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
 	_ = tw.Close()
 

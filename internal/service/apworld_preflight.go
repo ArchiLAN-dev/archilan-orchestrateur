@@ -57,6 +57,10 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string) (storage
 		return s.storeApworldPreflight(ctx, hash, PreflightStatusSkipped, "")
 	}
 
+	// Same container-concurrency budget as the slot preflights (story 9.42 AC6).
+	s.preflightSem <- struct{}{}
+	defer func() { <-s.preflightSem }()
+
 	genCtx, cancel := context.WithTimeout(ctx, s.cfg.PreflightTimeout)
 	defer cancel()
 

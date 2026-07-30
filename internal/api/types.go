@@ -81,6 +81,19 @@ type OverridePreflightRequest struct {
 	Overridden bool `json:"overridden"`
 }
 
+// StartSlotPreflightRequest is the body of POST /preflight-generations (story 9.42).
+type StartSlotPreflightRequest struct {
+	PlayerYaml  string `json:"playerYaml"`
+	ApworldHash string `json:"apworldHash,omitempty"`
+}
+
+// SlotPreflightResponse is returned by the slot preflight endpoints (story 9.42).
+type SlotPreflightResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status" example:"pending"` // pending | passed | failed
+	Error  string `json:"error,omitempty"`
+}
+
 // ApworldOptionsResponse is returned by GET /apworlds/{hash}/options.
 type ApworldOptionsResponse struct {
 	Options []TemplateOption `json:"options"`

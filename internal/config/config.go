@@ -36,7 +36,8 @@ type Config struct {
 	GenerationTimeout time.Duration // default 10min
 	LaunchTimeout     time.Duration // default 2min
 	SweeperInterval   time.Duration // default 30s
-	PreflightTimeout  time.Duration // default 5min - apworld upload solo test generation (story 9.38)
+	PreflightTimeout       time.Duration // default 5min - solo test generations (stories 9.38/9.42)
+	PreflightMaxConcurrent int           // shared cap on concurrent preflight containers (default 2)
 }
 
 func Load() *Config {
@@ -68,7 +69,8 @@ func Load() *Config {
 		GenerationTimeout: envDuration("GENERATION_TIMEOUT", 600),
 		LaunchTimeout:     envDuration("LAUNCH_TIMEOUT", 120),
 		SweeperInterval:   envDuration("SWEEPER_INTERVAL", 30),
-		PreflightTimeout:  envDuration("PREFLIGHT_TIMEOUT", 300),
+		PreflightTimeout:       envDuration("PREFLIGHT_TIMEOUT", 300),
+		PreflightMaxConcurrent: envInt("PREFLIGHT_MAX_CONCURRENT", 2),
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"archilan.fr/orchestrateur/internal/config"
@@ -37,6 +38,12 @@ type Service struct {
 	storage *storage.Client // nil if Minio not configured
 	cfg     *config.Config
 	log     *slog.Logger
+
+	// Preflight test generations (stories 9.38/9.42): shared container-concurrency budget
+	// and the in-memory slot-preflight job registry.
+	preflightSem    chan struct{}
+	slotPreflightMu sync.Mutex
+	slotPreflights  map[string]*SlotPreflight
 }
 
 func New(
@@ -48,6 +55,11 @@ func New(
 	cfg *config.Config,
 	log *slog.Logger,
 ) *Service {
+	maxConcurrent := cfg.PreflightMaxConcurrent
+	if maxConcurrent < 1 {
+		maxConcurrent = 1
+	}
+
 	return &Service{
 		db:      database,
 		docker:  dockerClient,
@@ -56,6 +68,9 @@ func New(
 		storage: storageCl,
 		cfg:     cfg,
 		log:     log,
+
+		preflightSem:   make(chan struct{}, maxConcurrent),
+		slotPreflights: map[string]*SlotPreflight{},
 	}
 }
 
