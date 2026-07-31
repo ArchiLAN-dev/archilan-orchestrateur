@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"archilan.fr/orchestrateur/internal/storage"
@@ -23,12 +24,33 @@ const (
 // stays small.
 const preflightErrorExcerptMax = 2000
 
-// preflightErrorExcerpt returns the last maxLen bytes of errText (whole string when shorter).
+// preflightErrorLineMax bounds a single line before the tail is taken. One generator line
+// can be enormous - a fill error lists every (location, item) pair - and a plain tail cut
+// then lands inside that line, throwing away the traceback AND the head of the message,
+// which is exactly where the actionable text sits (story 9.43). Capping per line first
+// keeps the structure and the head, and only sacrifices the middle of the dump.
+const preflightErrorLineMax = 300
+
+// preflightErrorExcerpt caps every line, then returns the last maxLen characters.
+// Rune-based throughout so a cut never produces invalid UTF-8.
 func preflightErrorExcerpt(errText string, maxLen int) string {
-	if maxLen <= 0 || len(errText) <= maxLen {
-		return errText
+	lines := strings.Split(errText, "\n")
+	for i, line := range lines {
+		runes := []rune(line)
+		if len(runes) > preflightErrorLineMax {
+			lines[i] = string(runes[:preflightErrorLineMax]) + "…"
+		}
 	}
-	return errText[len(errText)-maxLen:]
+	capped := strings.Join(lines, "\n")
+
+	if maxLen <= 0 {
+		return capped
+	}
+	runes := []rune(capped)
+	if len(runes) <= maxLen {
+		return capped
+	}
+	return string(runes[len(runes)-maxLen:])
 }
 
 // RunApworldPreflight executes the solo test generation for an uploaded apworld and
