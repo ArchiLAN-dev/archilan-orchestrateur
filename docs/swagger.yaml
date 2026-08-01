@@ -51,6 +51,13 @@ definitions:
       preflight:
         $ref: '#/definitions/api.ApworldPreflight'
     type: object
+  api.ApworldTemplateResponse:
+    properties:
+      hash:
+        type: string
+      template:
+        type: string
+    type: object
   api.ConfigureResponse:
     properties:
       slots:
@@ -260,6 +267,11 @@ definitions:
       status:
         type: string
       updatedAt:
+        type: string
+    type: object
+  api.SetApworldTemplateRequest:
+    properties:
+      template:
         type: string
     type: object
   api.SlotOption:
@@ -515,6 +527,37 @@ paths:
       summary: Force-allow (or re-block) a failed apworld preflight
       tags:
       - apworlds
+  /apworlds/{hash}/template:
+    post:
+      description: |-
+        Re-runs template generation against the apworld already in storage (story 9.46).
+        On failure nothing is written and the generator's stderr is returned.
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ApworldTemplateResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Regenerate the YAML template from the stored apworld
+      tags:
+      - apworlds
   /apworlds/{hash}/yaml:
     get:
       description: Returns the default YAML template for the given apworld hash
@@ -542,6 +585,47 @@ paths:
       security:
       - BearerAuth: []
       summary: Get apworld default YAML template
+      tags:
+      - apworlds
+    put:
+      consumes:
+      - application/json
+      description: Keeps the stored template in sync with what the central API serves
+        to players (story 9.45).
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      - description: New template
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.SetApworldTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ApworldTemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace the stored YAML template of an apworld
       tags:
       - apworlds
   /containers:
