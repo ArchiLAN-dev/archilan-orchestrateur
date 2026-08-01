@@ -289,6 +289,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/apworlds/{hash}/template": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Re-runs template generation against the apworld already in storage (story 9.46).\nOn failure nothing is written and the generator's stderr is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Regenerate the YAML template from the stored apworld",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldTemplateResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/apworlds/{hash}/yaml": {
             "get": {
                 "security": [
@@ -328,6 +374,68 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Keeps the stored template in sync with what the central API serves to players (story 9.45).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Replace the stored YAML template of an apworld",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New template",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.SetApworldTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldTemplateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1362,6 +1470,17 @@ const docTemplate = `{
                 }
             }
         },
+        "api.ApworldTemplateResponse": {
+            "type": "object",
+            "properties": {
+                "hash": {
+                    "type": "string"
+                },
+                "template": {
+                    "type": "string"
+                }
+            }
+        },
         "api.ConfigureResponse": {
             "type": "object",
             "properties": {
@@ -1672,6 +1791,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.SetApworldTemplateRequest": {
+            "type": "object",
+            "properties": {
+                "template": {
                     "type": "string"
                 }
             }

@@ -81,6 +81,17 @@ type OverridePreflightRequest struct {
 	Overridden bool `json:"overridden"`
 }
 
+// SetApworldTemplateRequest is the body of PUT /apworlds/{hash}/yaml (story 9.45).
+type SetApworldTemplateRequest struct {
+	Template string `json:"template"`
+}
+
+// ApworldTemplateResponse is returned by the template write/regenerate endpoints.
+type ApworldTemplateResponse struct {
+	Hash     string `json:"hash"`
+	Template string `json:"template"`
+}
+
 // StartSlotPreflightRequest is the body of POST /preflight-generations (story 9.42).
 type StartSlotPreflightRequest struct {
 	PlayerYaml  string `json:"playerYaml"`

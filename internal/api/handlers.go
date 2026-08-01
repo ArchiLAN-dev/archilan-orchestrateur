@@ -229,6 +229,76 @@ func handleOverrideApworldPreflight(svc *service.Service) http.HandlerFunc {
 	}
 }
 
+// handleSetApworldTemplate godoc
+// @Summary     Replace the stored YAML template of an apworld
+// @Description Keeps the stored template in sync with what the central API serves to players (story 9.45).
+// @Tags        apworlds
+// @Param       hash path string true "Apworld SHA-256 hash"
+// @Param       body body SetApworldTemplateRequest true "New template"
+// @Accept      json
+// @Produce     json
+// @Success     200 {object} ApworldTemplateResponse
+// @Failure     400 {object} ErrorResponse
+// @Failure     404 {object} ErrorResponse
+// @Failure     503 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /apworlds/{hash}/yaml [put]
+func handleSetApworldTemplate(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hash := chi.URLParam(r, "hash")
+		var req SetApworldTemplateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if req.Template == "" {
+			writeError(w, http.StatusBadRequest, "template is required")
+			return
+		}
+
+		err := svc.SetApworldTemplate(r.Context(), hash, []byte(req.Template))
+		if errors.Is(err, service.ErrStorageNotConfigured) {
+			writeError(w, http.StatusServiceUnavailable, "storage not configured")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, ApworldTemplateResponse{Hash: hash, Template: req.Template})
+	}
+}
+
+// handleRegenerateApworldTemplate godoc
+// @Summary     Regenerate the YAML template from the stored apworld
+// @Description Re-runs template generation against the apworld already in storage (story 9.46).
+// @Description On failure nothing is written and the generator's stderr is returned.
+// @Tags        apworlds
+// @Param       hash path string true "Apworld SHA-256 hash"
+// @Produce     json
+// @Success     200 {object} ApworldTemplateResponse
+// @Failure     422 {object} ErrorResponse
+// @Failure     503 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /apworlds/{hash}/template [post]
+func handleRegenerateApworldTemplate(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hash := chi.URLParam(r, "hash")
+
+		template, err := svc.RegenerateApworldTemplate(r.Context(), hash)
+		if errors.Is(err, service.ErrStorageNotConfigured) {
+			writeError(w, http.StatusServiceUnavailable, "storage not configured")
+			return
+		}
+		if err != nil {
+			// 422: the apworld exists but cannot produce a template; the stored one is intact.
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, ApworldTemplateResponse{Hash: hash, Template: string(template)})
+	}
+}
+
 // handleStartSlotPreflight godoc
 // @Summary     Start a solo preflight generation for one player YAML
 // @Description Queues a solo test generation of the given player YAML (story 9.42); poll GET /preflight-generations/{id}.
