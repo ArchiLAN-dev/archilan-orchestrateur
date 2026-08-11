@@ -707,6 +707,14 @@ type APServerCreateConfig struct {
 	AdminPassword  string // AP server admin password (enables !admin commands)
 	APImage        string
 	BridgeNetwork  string
+	// ProxyNetwork, when set, is connected to the container after creation so the reverse proxy
+	// can reach it at `ap-server-{sessionId}:38281`. Connected in a second call rather than at
+	// creation time: attaching several networks in a single /containers/create is only supported
+	// by recent Docker APIs, and this code must not depend on the daemon's version.
+	ProxyNetwork string
+	// PublishHostPort binds APPort on 0.0.0.0. False in production, where the proxy is the only
+	// public socket of a run (epic 37).
+	PublishHostPort bool
 	// Optional AP server_options for this session. Empty string / nil pointer means
 	// "don't pass it" - the launch script's own default stands. Modes are validated
 	// upstream (service.Launch). See epic 27.
@@ -781,9 +789,9 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 		},
 		ExposedPorts: map[string]struct{}{"38281/tcp": {}},
 		HostConfig: apServerHostConfig{
-			PortBindings: map[string][]portBinding{
-				"38281/tcp": {{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.APPort)}},
-			},
+			// Nil when the proxy fronts the run: the container listens on 38281 inside its
+			// network and nothing is published on the host.
+			PortBindings: apServerPortBindings(cfg),
 			// on-failure (not unless-stopped): a clean exit 0 from Archipelago's own
 			// auto_shutdown must leave the container stopped (the session goes idle); only a
 			// real crash (exit != 0) is auto-retried, capped so a crash-loop ends as crashed.
@@ -813,7 +821,48 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		return "", fmt.Errorf("create ap server decode: %w", err)
 	}
+
+	if cfg.ProxyNetwork != "" {
+		if err := c.connectNetwork(ctx, created.ID, cfg.ProxyNetwork); err != nil {
+			// Without the proxy network - and with no host port when PublishHostPort is false -
+			// the run would be unreachable while looking perfectly healthy. Remove the container
+			// and fail loudly rather than start a session nobody can join.
+			_ = c.Remove(ctx, created.ID)
+			return "", fmt.Errorf("connect ap server to proxy network %q: %w", cfg.ProxyNetwork, err)
+		}
+	}
+
 	return created.ID, nil
+}
+
+// apServerPortBindings returns the host bindings for an AP server container, or nil when the run
+// is fronted by the reverse proxy (epic 37, story 37.3).
+func apServerPortBindings(cfg APServerCreateConfig) map[string][]portBinding {
+	if !cfg.PublishHostPort {
+		return nil
+	}
+	return map[string][]portBinding{
+		"38281/tcp": {{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.APPort)}},
+	}
+}
+
+// connectNetwork attaches an existing container to an additional Docker network.
+func (c *Client) connectNetwork(ctx context.Context, containerID, network string) error {
+	body := struct {
+		Container string `json:"Container"`
+	}{Container: containerID}
+
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/networks/%s/connect", network), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, raw)
+	}
+	return nil
 }
 
 // RemoveAPServer force-removes the AP server container for a session. Idempotent (404 is ignored).

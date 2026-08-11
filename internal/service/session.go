@@ -470,6 +470,8 @@ func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 		AdminPassword:       adminPassword,
 		APImage:             s.cfg.APImage,
 		BridgeNetwork:       s.cfg.BridgeNetwork,
+		ProxyNetwork:        s.cfg.ProxyNetwork,
+		PublishHostPort:     s.cfg.PublishAPPort,
 		ReleaseMode:         req.ReleaseMode,
 		CollectMode:         req.CollectMode,
 		RemainingMode:       req.RemainingMode,
