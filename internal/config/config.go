@@ -19,6 +19,14 @@ type Config struct {
 	BridgeImage    string
 	BridgeNetwork  string
 	BridgeToken    string
+	// ProxyNetwork is the Docker network shared with the reverse proxy. When set, each AP server
+	// container is also attached to it so Traefik can reach `ap-server-{sessionId}:38281`
+	// directly, without the port ever being published on the host (epic 37).
+	ProxyNetwork string
+	// PublishAPPort keeps the historical behaviour of binding the AP server port on 0.0.0.0.
+	// Production turns it off and routes through the proxy instead; local development, which has
+	// no reverse proxy, leaves it on so a desktop client can still connect.
+	PublishAPPort bool
 	APImage        string
 	WebhookURL     string
 	WebhookSecret  string
@@ -41,6 +49,26 @@ type Config struct {
 }
 
 func Load() *Config {
+	cfg := loadFromEnv()
+	if err := cfg.Validate(); err != nil {
+		panic(err.Error())
+	}
+	return cfg
+}
+
+// Validate rejects combinations that would start an orchestrateur unable to serve anyone.
+func (c *Config) Validate() error {
+	// Neither published on the host nor reachable through a proxy network: every run launched by
+	// this instance would be unreachable, and nothing downstream would report it - the session
+	// would go `running` and no client could ever connect. Fail at startup instead.
+	if !c.PublishAPPort && c.ProxyNetwork == "" {
+		return fmt.Errorf("AP_PUBLISH_HOST_PORT=false requires PROXY_NETWORK to be set, " +
+			"otherwise no AP server would be reachable")
+	}
+	return nil
+}
+
+func loadFromEnv() *Config {
 	return &Config{
 		Port:               envInt("PORT", 8000),
 		APIKey:             envRequired("API_KEY"),
@@ -52,6 +80,8 @@ func Load() *Config {
 		BridgeImage:    env("BRIDGE_IMAGE", "archilan-bridge:latest"),
 		BridgeNetwork:  env("BRIDGE_NETWORK", "archilan_default"),
 		BridgeToken:    envRequired("BRIDGE_TOKEN"),
+		ProxyNetwork:   env("PROXY_NETWORK", ""),
+		PublishAPPort:  envBool("AP_PUBLISH_HOST_PORT", true),
 		APImage:        env("AP_IMAGE", "archipelago:latest"),
 		WebhookURL:     env("WEBHOOK_URL", ""),
 		WebhookSecret:  env("WEBHOOK_SECRET", ""),
