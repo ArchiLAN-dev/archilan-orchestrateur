@@ -140,7 +140,6 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 			fmt.Sprintf("AP_RUNTIME=docker"),
 			fmt.Sprintf("AP_IMAGE=%s", cfg.APImage),
 			fmt.Sprintf("AP_NETWORK=%s", c.cfg.BridgeNetwork),
-			fmt.Sprintf("AP_SERVER_HOST_PORT=%d", cfg.Port+c.cfg.APServerPortOffset),
 			fmt.Sprintf("AP_SERVER_PASSWORD=%s", cfg.ServerPassword),
 			fmt.Sprintf("AP_ADMIN_PASSWORD=%s", cfg.AdminPassword),
 			fmt.Sprintf("CENTRAL_API_URL=%s", cfg.CentralAPIURL),
@@ -157,9 +156,10 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 		},
 		ExposedPorts: map[string]struct{}{"5000/tcp": {}},
 		HostConfig: hostConfig{
-			PortBindings: map[string][]portBinding{
-				"5000/tcp": {{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.Port)}},
-			},
+			// Nil when the API reaches the bridge by container name over the shared network:
+			// nothing is published on the host, and the REST port stops being public (epic 37,
+			// story 37.7).
+			PortBindings:  bridgePortBindings(cfg, c.cfg.PublishBridgePort),
 			RestartPolicy: restartPolicy{Name: "unless-stopped"},
 			Binds: []string{
 				fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID),
@@ -833,6 +833,17 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 	}
 
 	return created.ID, nil
+}
+
+// bridgePortBindings returns the host bindings for a bridge container, or nil when the API joins it
+// by container name over the shared network (epic 37, story 37.7).
+func bridgePortBindings(cfg CreateConfig, publish bool) map[string][]portBinding {
+	if !publish {
+		return nil
+	}
+	return map[string][]portBinding{
+		"5000/tcp": {{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.Port)}},
+	}
 }
 
 // apServerPortBindings returns the host bindings for an AP server container, or nil when the run

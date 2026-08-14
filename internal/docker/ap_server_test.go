@@ -37,3 +37,25 @@ func TestAPServerPortBindingsPublishTheAllocatedPort(t *testing.T) {
 		t.Errorf("expected 0.0.0.0, got %q", binding[0].HostIP)
 	}
 }
+
+// Story 37.7 : le port REST du bridge cesse d'etre publie quand l'API le joint par le reseau
+// interne. C'etait la derniere socket publique d'une run.
+func TestBridgePortBindingsAreNilWhenTheApiUsesTheInternalPath(t *testing.T) {
+	bindings := bridgePortBindings(CreateConfig{SessionID: "sess-1", Port: 25042}, false)
+
+	if bindings != nil {
+		t.Fatalf("expected no host binding when the API joins the bridge internally, got %v", bindings)
+	}
+}
+
+func TestBridgePortBindingsPublishTheAllocatedPortWhenAsked(t *testing.T) {
+	bindings := bridgePortBindings(CreateConfig{SessionID: "sess-1", Port: 25042}, true)
+
+	binding, ok := bindings["5000/tcp"]
+	if !ok {
+		t.Fatalf("expected a binding for the REST port, got %v", bindings)
+	}
+	if len(binding) != 1 || binding[0].HostPort != "25042" {
+		t.Fatalf("expected host port 25042, got %v", binding)
+	}
+}
