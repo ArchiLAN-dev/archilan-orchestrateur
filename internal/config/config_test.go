@@ -59,3 +59,28 @@ func TestLoadReadsTheProxySettings(t *testing.T) {
 		t.Errorf("PROXY_NETWORK not read, got %q", cfg.ProxyNetwork)
 	}
 }
+
+func TestLoadDefaultsToPublishingTheBridgePort(t *testing.T) {
+	t.Setenv("API_KEY", "k")
+	t.Setenv("BRIDGE_TOKEN", "t")
+
+	cfg := Load()
+
+	// Le defaut conserve le comportement d'avant 37.7 : une installation qui ne change rien
+	// continue de fonctionner, y compris en developpement local.
+	if !cfg.PublishBridgePort {
+		t.Error("BRIDGE_PUBLISH_HOST_PORT should default to true")
+	}
+}
+
+func TestLoadReadsTheBridgePublicationSetting(t *testing.T) {
+	t.Setenv("API_KEY", "k")
+	t.Setenv("BRIDGE_TOKEN", "t")
+	t.Setenv("BRIDGE_PUBLISH_HOST_PORT", "false")
+
+	cfg := Load()
+
+	if cfg.PublishBridgePort {
+		t.Error("BRIDGE_PUBLISH_HOST_PORT=false should close the host binding")
+	}
+}

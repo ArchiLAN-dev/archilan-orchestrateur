@@ -23,6 +23,12 @@ type Config struct {
 	// container is also attached to it so Traefik can reach `ap-server-{sessionId}:38281`
 	// directly, without the port ever being published on the host (epic 37).
 	ProxyNetwork string
+	// PublishBridgePort keeps the historical behaviour of binding the bridge's REST port on
+	// 0.0.0.0. The API used to reach it that way - through the server's public address, for a
+	// container running on the same machine. Since story 37.7 it joins
+	// `archilan-bridge-{sessionId}:5000` over the shared network, so production turns this off and
+	// the last public socket of a run closes.
+	PublishBridgePort bool
 	// PublishAPPort keeps the historical behaviour of binding the AP server port on 0.0.0.0.
 	// Production turns it off and routes through the proxy instead; local development, which has
 	// no reverse proxy, leaves it on so a desktop client can still connect.
@@ -81,7 +87,8 @@ func loadFromEnv() *Config {
 		BridgeNetwork:  env("BRIDGE_NETWORK", "archilan_default"),
 		BridgeToken:    envRequired("BRIDGE_TOKEN"),
 		ProxyNetwork:   env("PROXY_NETWORK", ""),
-		PublishAPPort:  envBool("AP_PUBLISH_HOST_PORT", true),
+		PublishAPPort:     envBool("AP_PUBLISH_HOST_PORT", true),
+		PublishBridgePort: envBool("BRIDGE_PUBLISH_HOST_PORT", true),
 		APImage:        env("AP_IMAGE", "archipelago:latest"),
 		WebhookURL:     env("WEBHOOK_URL", ""),
 		WebhookSecret:  env("WEBHOOK_SECRET", ""),
