@@ -157,6 +157,11 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, 
 type OptionTypeOverride struct {
 	Type           string         `json:"type"`
 	DefaultWeights map[string]int `json:"defaultWeights,omitempty"`
+	// Defaults and ValidKeys describe an OptionDict (story 9.33): a mapping of setting names
+	// to literal values, which used to be reported as "weights" and lost its defaults to an
+	// integer coercion that raised on the first string.
+	Defaults  map[string]any `json:"defaults,omitempty"`
+	ValidKeys []string       `json:"validKeys,omitempty"`
 	// Authoritative range bounds + default from introspection (story 9.25),
 	// emitted only for range options; override the template-parsed values.
 	Min     *int `json:"min,omitempty"`

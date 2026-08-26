@@ -480,6 +480,12 @@ func handleGetApworldOptions(svc *service.Service) http.HandlerFunc {
 				if ov.Type == "weights" && ov.DefaultWeights != nil {
 					opt.DefaultValue = ov.DefaultWeights
 				}
+				if ov.Type == "dict" {
+					if ov.Defaults != nil {
+						opt.DefaultValue = ov.Defaults
+					}
+					opt.ValidKeys = ov.ValidKeys
+				}
 				// Authoritative range bounds/default from introspection win over the
 				// template-parsed (comment-derived) values (story 9.25).
 				if ov.Min != nil {

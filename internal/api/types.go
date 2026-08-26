@@ -50,6 +50,9 @@ type TemplateOption struct {
 	Weights      map[string]int `json:"weights,omitempty"`
 	RangeMin     *int           `json:"rangeMin,omitempty"`
 	RangeMax     *int           `json:"rangeMax,omitempty"`
+	// ValidKeys lists the sub-settings an OptionDict accepts (story 9.33). Empty for every
+	// other type, and for a dict whose introspection does not know them.
+	ValidKeys []string `json:"validKeys,omitempty"`
 }
 
 // ApworldPreflight is the upload-time solo test-generation verdict (story 9.38).
