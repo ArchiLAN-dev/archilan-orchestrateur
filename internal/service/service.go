@@ -74,6 +74,15 @@ func New(
 	}
 }
 
+// ReadMultidata reads the slot table of a pre-generated output archive (story 16.18).
+//
+// A party can be created from a seed generated elsewhere, and the archive is the only thing we
+// get: its slots cannot be derived from a game selection nobody made here. Parsing happens in a
+// one-shot, network-disabled container because a multidata is a pickle from an untrusted source.
+func (s *Service) ReadMultidata(ctx context.Context, archive []byte, filename string) ([]byte, error) {
+	return s.docker.ReadMultidata(ctx, archive, filename)
+}
+
 // UploadApworld hashes the binary, stores it in Minio, generates the YAML template via
 // a one-shot Archipelago container, stores the template, and returns both.
 func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, yamlData []byte, err error) {

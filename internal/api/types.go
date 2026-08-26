@@ -1,5 +1,7 @@
 package api
 
+import "archilan.fr/orchestrateur/internal/service"
+
 // ContainerResponse represents a managed Bridge container.
 type ContainerResponse struct {
 	SessionID   string  `json:"sessionId"`
@@ -170,6 +172,9 @@ type LaunchSessionRequest struct {
 	LocationCheckPoints *int   `json:"locationCheckPoints,omitempty"`
 	AutoShutdown        *int   `json:"autoShutdown,omitempty"`
 	Compatibility       *int   `json:"compatibility,omitempty"`
+	// SlotNames is the multiworld roster the bridge attaches by (story 16.18). Omitted on a
+	// generated seed, whose injected observer slot the bridge already knows how to find.
+	SlotNames []service.SlotName `json:"slotNames,omitempty"`
 }
 
 // SlotOption is a randomizer option with required flag and current/default values.

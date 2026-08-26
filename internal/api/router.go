@@ -59,6 +59,7 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 		r.Post("/sessions/{sessionId}/generate", handleGenerateSession(svc))
 		r.Post("/sessions/{sessionId}/launch", handleLaunchSession(svc))
 		r.Post("/sessions/{sessionId}/launch-from-file", handleLaunchSessionFromFile(svc))
+		r.Post("/multidata/inspect", handleReadMultidata(svc))
 		r.Post("/sessions/{sessionId}/stop", handleStopSession(svc))
 		r.Post("/sessions/{sessionId}/restart", handleRestartSession(svc))
 		r.Post("/sessions/{sessionId}/relaunch-from-save", handleRelaunchFromSave(svc))

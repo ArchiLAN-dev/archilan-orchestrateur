@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -64,6 +65,13 @@ func serverOptionsFromForm(r *http.Request) (service.LaunchRequest, error) {
 	}
 	if opts.Compatibility, err = parseOptInt(r.FormValue("compatibility")); err != nil {
 		return opts, err
+	}
+	// Story 16.18: the roster the bridge attaches by. Absent on a generated seed, where the
+	// injected observer slot is waiting for it.
+	if raw := r.FormValue("slotNames"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &opts.SlotNames); err != nil {
+			return opts, fmt.Errorf("slotNames: %w", err)
+		}
 	}
 	return opts, nil
 }
@@ -186,6 +194,7 @@ func handleLaunchSession(svc *service.Service) http.HandlerFunc {
 			LocationCheckPoints: req.LocationCheckPoints,
 			AutoShutdown:        req.AutoShutdown,
 			Compatibility:       req.Compatibility,
+			SlotNames:           req.SlotNames,
 		})
 		if err != nil {
 			writeSessionError(w, err)

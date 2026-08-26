@@ -127,6 +127,28 @@ type CreateConfig struct {
 	AdminPassword    string
 	CentralAPIURL    string
 	CentralAPISecret string
+	// SlotNames is the multiworld roster the bridge attaches by (story 16.18); empty keeps
+	// the bridge on its historical default, the injected "Bridge" observer slot.
+	SlotNames []SlotName
+}
+
+// SlotName names one slot of the multiworld for the bridge.
+type SlotName struct {
+	Name string `json:"name"`
+	Game string `json:"game"`
+}
+
+// marshalSlotNames renders the roster as the JSON the bridge parses out of SLOT_NAMES. A
+// failure here is not worth failing a launch over: the bridge falls back to its default slot.
+func marshalSlotNames(slots []SlotName) string {
+	if len(slots) == 0 {
+		return "[]"
+	}
+	raw, err := json.Marshal(slots)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
 }
 
 // Create creates a container but does not start it.
@@ -149,6 +171,7 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 			"AP_WORLDS_DIR=/data/worlds",
 			"AP_YAMLS_DIR=/data/yamls",
 			"AP_OUTPUT_DIR=/data/output",
+			fmt.Sprintf("SLOT_NAMES=%s", marshalSlotNames(cfg.SlotNames)),
 		},
 		Labels: map[string]string{
 			managedLabel: "true",
@@ -452,6 +475,63 @@ func (c *Client) IntrospectOptions(ctx context.Context, apworldData []byte, hash
 	out, err := c.containerLogs(ctx, containerID, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("read introspect output: %w", err)
+	}
+	return bytes.TrimSpace(out), nil
+}
+
+// ReadMultidata runs a one-shot Archipelago container to read the slot table of an output
+// archive (story 16.18). Returns the raw JSON bytes:
+// {"seedName": "...", "slots": [{"slot": 1, "name": "...", "game": "...", "type": 1}]}.
+//
+// The archive comes from a member, and a multidata is a pickle: read_multidata.py loads it
+// through Archipelago's own allowlisting unpickler, and this container is one-shot and
+// network-disabled, so nothing the file can express reaches the host.
+func (c *Client) ReadMultidata(ctx context.Context, archive []byte, filename string) ([]byte, error) {
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "seed/", Mode: 0755})
+	_ = tw.WriteHeader(&tar.Header{Name: "seed/" + filename, Mode: 0644, Size: int64(len(archive))})
+	_, _ = tw.Write(archive)
+	_ = tw.Close()
+
+	cmd := []string{
+		"python3", "/usr/local/bin/read_multidata.py",
+		"--archive", "/tmp/seed/" + filename,
+	}
+	containerID, err := c.createOneShot(ctx, c.cfg.APImage, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("create multidata container: %w", err)
+	}
+	defer func() { _ = c.Remove(ctx, containerID) }()
+
+	if err := c.putArchiveTo(ctx, containerID, "/tmp", &tarBuf); err != nil {
+		return nil, fmt.Errorf("copy archive to container: %w", err)
+	}
+
+	if err := c.startContainer(ctx, containerID); err != nil {
+		return nil, fmt.Errorf("start multidata container: %w", err)
+	}
+
+	exitCode, err := c.waitContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("wait for multidata container: %w", err)
+	}
+
+	if exitCode != 0 {
+		// read_multidata.py reports a refusal as JSON on stdout before exiting non-zero, so the
+		// caller can tell the member *why* their archive was rejected.
+		out, _ := c.containerLogs(ctx, containerID, true, false)
+		out = bytes.TrimSpace(out)
+		if len(out) > 0 {
+			return out, nil
+		}
+		stderr, _ := c.containerLogs(ctx, containerID, false, true)
+		return nil, fmt.Errorf("read_multidata exited %d: %s", exitCode, bytes.TrimSpace(stderr))
+	}
+
+	out, err := c.containerLogs(ctx, containerID, true, false)
+	if err != nil {
+		return nil, fmt.Errorf("read multidata output: %w", err)
 	}
 	return bytes.TrimSpace(out), nil
 }

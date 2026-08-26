@@ -72,6 +72,18 @@ type LaunchRequest struct {
 	LocationCheckPoints *int // >= 0
 	AutoShutdown        *int // >= 0 (seconds; 0 = never)
 	Compatibility       *int // 0|1|2
+
+	// SlotNames is the multiworld roster, ordered by Archipelago slot number, forwarded to the
+	// bridge as SLOT_NAMES (story 16.18). Our own generated seeds carry an injected observer
+	// slot the bridge attaches to by name; a seed generated elsewhere has none, so the bridge
+	// has to be told which slot to attach to instead of assuming one is waiting for it.
+	SlotNames []SlotName
+}
+
+// SlotName names one slot of the multiworld for the bridge.
+type SlotName struct {
+	Name string `json:"name"`
+	Game string `json:"game"`
 }
 
 // serverOptionsJSON is the persisted form of a session's AP server_options. It is stored at
@@ -443,6 +455,15 @@ func (s *Service) Launch(ctx context.Context, req LaunchRequest) error {
 	return nil
 }
 
+// toDockerSlotNames converts the service-level roster to the docker layer's shape.
+func toDockerSlotNames(slots []SlotName) []docker.SlotName {
+	out := make([]docker.SlotName, 0, len(slots))
+	for _, slot := range slots {
+		out = append(out, docker.SlotName{Name: slot.Name, Game: slot.Game})
+	}
+	return out
+}
+
 func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 	ctx := context.Background()
 	sessionID := req.SessionID
@@ -515,6 +536,7 @@ func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 		AdminPassword:    adminPassword,
 		CentralAPIURL:    s.cfg.CentralAPIURL,
 		CentralAPISecret: s.cfg.CentralAPISecret,
+		SlotNames:        toDockerSlotNames(req.SlotNames),
 	})
 	if err != nil {
 		_ = s.docker.Stop(ctx, apContainerID)

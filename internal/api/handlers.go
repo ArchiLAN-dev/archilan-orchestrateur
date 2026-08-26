@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -112,6 +113,53 @@ func handleUploadApworld(svc *service.Service) http.HandlerFunc {
 			Hash:    hash,
 			Options: apiOptions,
 		})
+	}
+}
+
+// handleReadMultidata godoc
+// @Summary     Read the slot table of a pre-generated output archive
+// @Description Runs a one-shot, network-disabled Archipelago container to read slot_info out of
+// @Description an output .zip or bare .archipelago, using Archipelago's own allowlisting
+// @Description unpickler. Returns {"seedName": "...", "slots": [...]} or {"error": "..."} when
+// @Description the archive carries no usable multidata.
+// @Tags        sessions
+// @Accept      multipart/form-data
+// @Produce     json
+// @Param       file formData file true "The output .zip or .archipelago file"
+// @Success     200 {object} map[string]interface{}
+// @Failure     400 {object} ErrorResponse
+// @Failure     500 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /multidata/inspect [post]
+func handleReadMultidata(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(256 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form")
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file is required")
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read file")
+			return
+		}
+
+		out, err := svc.ReadMultidata(r.Context(), data, filepath.Base(header.Filename))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(out)
 	}
 }
 
