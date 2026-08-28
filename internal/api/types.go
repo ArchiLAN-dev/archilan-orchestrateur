@@ -52,7 +52,19 @@ type TemplateOption struct {
 	RangeMax     *int           `json:"rangeMax,omitempty"`
 	// ValidKeys lists the sub-settings an OptionDict accepts (story 9.33). Empty for every
 	// other type, and for a dict whose introspection does not know them.
+	//
+	// Not to be confused with Keys below: ValidKeys holds sub-setting NAMES, Keys holds the
+	// VALUES each of them accepts. Reading one as the other is how a dropdown ends up
+	// offering key names as if they were values.
 	ValidKeys []string `json:"validKeys,omitempty"`
+	// Keys maps a sub-setting of an OptionDict to the values it accepts (story 9.51). Present
+	// only when the world declared a `schema` for it; empty for every other type.
+	Keys map[string]DictSubOption `json:"keys,omitempty"`
+}
+
+// DictSubOption is what one sub-setting of an OptionDict accepts (story 9.51).
+type DictSubOption struct {
+	Values []string `json:"values,omitempty"`
 }
 
 // ApworldPreflight is the upload-time solo test-generation verdict (story 9.38).

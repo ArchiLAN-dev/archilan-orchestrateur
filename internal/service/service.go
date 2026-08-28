@@ -162,11 +162,20 @@ type OptionTypeOverride struct {
 	// integer coercion that raised on the first string.
 	Defaults  map[string]any `json:"defaults,omitempty"`
 	ValidKeys []string       `json:"validKeys,omitempty"`
+	// Keys carries, per sub-setting, the values it accepts (story 9.51). Emitted only for the
+	// worlds whose OptionDict declares a `schema`; absent - not empty - for every other one,
+	// which is the difference between "no vocabulary is declared" and "it declares none".
+	Keys map[string]DictSubOption `json:"keys,omitempty"`
 	// Authoritative range bounds + default from introspection (story 9.25),
 	// emitted only for range options; override the template-parsed values.
 	Min     *int `json:"min,omitempty"`
 	Max     *int `json:"max,omitempty"`
 	Default *int `json:"default,omitempty"`
+}
+
+// DictSubOption is what one sub-setting of an OptionDict accepts (story 9.51).
+type DictSubOption struct {
+	Values []string `json:"values,omitempty"`
 }
 
 // GetApworldOptionTypes returns introspected type overrides for an apworld's options.
