@@ -54,3 +54,38 @@ func (s *Service) RegenerateApworldTemplate(ctx context.Context, hash string) ([
 
 	return template, nil
 }
+
+// ReintrospectApworldOptions re-runs option introspection against the apworld already in storage
+// and replaces the stored types sidecar (story 9.53).
+//
+// Introspection otherwise happens exactly once, in the background goroutine of UploadApworld, so a
+// world introspected by an older image keeps its old answer forever. The only way to refresh it was
+// to re-upload the same bytes the server already holds - which is what this replaces.
+//
+// On failure nothing is written. The sidecar carries more than the newest field: range bounds,
+// option types and the location list all live in it, so blanking it on a bad run would cost the
+// editor far more than the refresh was worth.
+func (s *Service) ReintrospectApworldOptions(ctx context.Context, hash string) ([]byte, error) {
+	if s.storage == nil {
+		return nil, ErrStorageNotConfigured
+	}
+
+	data, err := s.storage.DownloadApworld(ctx, hash)
+	if err != nil {
+		return nil, fmt.Errorf("download apworld %s: %w", hash, err)
+	}
+
+	typesJSON, err := s.docker.IntrospectOptions(ctx, data, hash)
+	if err != nil {
+		return nil, fmt.Errorf("reintrospect options: %w", err)
+	}
+	if len(typesJSON) == 0 {
+		return nil, fmt.Errorf("reintrospect options: introspection produced an empty result")
+	}
+
+	if err := s.storage.UploadApworldOptionTypes(ctx, hash, typesJSON); err != nil {
+		return nil, fmt.Errorf("store introspected options: %w", err)
+	}
+
+	return typesJSON, nil
+}
