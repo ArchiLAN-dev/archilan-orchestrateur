@@ -485,6 +485,12 @@ func handleGetApworldOptions(svc *service.Service) http.HandlerFunc {
 						opt.DefaultValue = ov.Defaults
 					}
 					opt.ValidKeys = ov.ValidKeys
+					if len(ov.Keys) > 0 {
+						opt.Keys = make(map[string]DictSubOption, len(ov.Keys))
+						for subKey, sub := range ov.Keys {
+							opt.Keys[subKey] = DictSubOption{Values: sub.Values}
+						}
+					}
 				}
 				// Authoritative range bounds/default from introspection win over the
 				// template-parsed (comment-derived) values (story 9.25).
