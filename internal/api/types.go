@@ -67,6 +67,12 @@ type DictSubOption struct {
 	Values []string `json:"values,omitempty"`
 }
 
+// ApworldOptionsIntrospectionResponse acknowledges a re-introspection (story 9.53).
+type ApworldOptionsIntrospectionResponse struct {
+	Hash         string `json:"hash"`
+	Introspected bool   `json:"introspected"`
+}
+
 // ApworldPreflight is the upload-time solo test-generation verdict (story 9.38).
 type ApworldPreflight struct {
 	Status     string `json:"status" example:"passed"` // pending | passed | failed | skipped

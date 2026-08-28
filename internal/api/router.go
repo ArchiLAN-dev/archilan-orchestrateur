@@ -39,6 +39,7 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 		r.Get("/apworlds/{hash}/yaml", handleGetApworldTemplate(svc))
 		r.Put("/apworlds/{hash}/yaml", handleSetApworldTemplate(svc))
 		r.Post("/apworlds/{hash}/template", handleRegenerateApworldTemplate(svc))
+		r.Post("/apworlds/{hash}/introspect", handleReintrospectApworldOptions(svc))
 		r.Post("/apworlds/{hash}/preflight", handleRunApworldPreflight(svc))
 		r.Post("/apworlds/{hash}/preflight-override", handleOverrideApworldPreflight(svc))
 		r.Post("/preflight-generations", handleStartSlotPreflight(svc))

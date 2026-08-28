@@ -347,6 +347,42 @@ func handleRegenerateApworldTemplate(svc *service.Service) http.HandlerFunc {
 	}
 }
 
+// handleReintrospectApworldOptions godoc
+// @Summary     Re-run option introspection on the stored apworld
+// @Description Re-runs introspection against the apworld already in storage and replaces the types
+// @Description sidecar (story 9.53). Introspection otherwise runs only once, at upload, so a world
+// @Description introspected by an older image keeps its old answer until this is called.
+// @Description On failure nothing is written: the sidecar also carries range bounds, option types
+// @Description and the location list, and blanking it would cost more than the refresh gains.
+// @Tags        apworlds
+// @Param       hash path string true "Apworld SHA-256 hash"
+// @Produce     json
+// @Success     200 {object} ApworldOptionsIntrospectionResponse
+// @Failure     422 {object} ErrorResponse
+// @Failure     503 {object} ErrorResponse
+// @Security    BearerAuth
+// @Router      /apworlds/{hash}/introspect [post]
+func handleReintrospectApworldOptions(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hash := chi.URLParam(r, "hash")
+
+		if _, err := svc.ReintrospectApworldOptions(r.Context(), hash); err != nil {
+			if errors.Is(err, service.ErrStorageNotConfigured) {
+				writeError(w, http.StatusServiceUnavailable, "storage not configured")
+				return
+			}
+			// 422: the apworld exists but cannot be introspected; the stored sidecar is intact.
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+
+		// The parsed options are served by GET /apworlds/{hash}/options, which merges them with the
+		// template. Returning them here too would give the caller a second, subtly different shape
+		// of the same thing.
+		writeJSON(w, http.StatusOK, ApworldOptionsIntrospectionResponse{Hash: hash, Introspected: true})
+	}
+}
+
 // handleStartSlotPreflight godoc
 // @Summary     Start a solo preflight generation for one player YAML
 // @Description Queues a solo test generation of the given player YAML (story 9.42); poll GET /preflight-generations/{id}.
