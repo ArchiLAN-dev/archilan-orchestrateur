@@ -79,6 +79,10 @@ type ApworldPreflight struct {
 	Error      string `json:"error,omitempty"`
 	CheckedAt  string `json:"checkedAt,omitempty" example:"2026-07-30T12:00:00Z"`
 	Overridden bool   `json:"overridden"`
+	// Image and ImageID name the Archipelago image the verdict was produced with (story 38.8);
+	// absent on a verdict older than that story.
+	Image   string `json:"image,omitempty" example:"ghcr.io/archilan-dev/archipelago:0.16.1"`
+	ImageID string `json:"imageId,omitempty" example:"sha256:4b1c2d"`
 }
 
 // ApworldEntry represents a single uploaded apworld with its game metadata.
@@ -265,4 +269,10 @@ type ConfigureSlotResponse struct {
 type ConfigureResponse struct {
 	Valid bool                    `json:"valid"`
 	Slots []ConfigureSlotResponse `json:"slots"`
+}
+
+// RuntimeResponse is returned by GET /runtime (story 38.8).
+type RuntimeResponse struct {
+	APImage   string `json:"apImage" example:"ghcr.io/archilan-dev/archipelago:0.16.1"`
+	APImageID string `json:"apImageId" example:"sha256:4b1c2d"`
 }

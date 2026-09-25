@@ -41,6 +41,11 @@ type ApworldPreflight struct {
 	Error      string `json:"error,omitempty"`
 	CheckedAt  string `json:"checkedAt,omitempty"` // RFC3339
 	Overridden bool   `json:"overridden,omitempty"`
+	// Image and ImageID name the Archipelago image a completed verdict was produced with
+	// (story 38.8): its reference, and the id that also tells a re-pushed tag apart. Empty for
+	// a verdict older than that story, or when the image could not be inspected.
+	Image   string `json:"image,omitempty"`
+	ImageID string `json:"imageId,omitempty"`
 }
 
 type ApworldMeta struct {

@@ -138,10 +138,11 @@ func (s *Service) OverrideApworldPreflight(ctx context.Context, hash string, ove
 	})
 }
 
+// storeApworldPreflight records a completed verdict, stamped with the image that produced it
+// (story 38.8).
 func (s *Service) storeApworldPreflight(ctx context.Context, hash, status, errExcerpt string) (storage.ApworldMeta, error) {
+	rt := s.Runtime(ctx)
 	return s.storage.MutateApworldPreflight(ctx, hash, func(p *storage.ApworldPreflight) {
-		p.Status = status
-		p.Error = errExcerpt
-		p.CheckedAt = time.Now().UTC().Format(time.RFC3339)
+		applyVerdict(p, status, errExcerpt, time.Now(), rt)
 	})
 }

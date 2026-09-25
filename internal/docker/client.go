@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"archilan.fr/orchestrateur/internal/config"
@@ -39,6 +40,13 @@ type Client struct {
 	http *http.Client
 	cfg  *config.Config
 	log  *slog.Logger
+
+	// Image id cache (story 38.8): one reference at a time, the one the verdicts are stamped with.
+	now         func() time.Time // nil means time.Now; set by tests
+	imageMu     sync.Mutex
+	imageRef    string
+	imageID     string
+	imageSeenAt time.Time
 }
 
 func New(cfg *config.Config, log *slog.Logger) (*Client, error) {

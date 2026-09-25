@@ -34,6 +34,8 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware(cfg.APIKey))
 
+		r.Get("/runtime", handleRuntime(svc))
+
 		r.Get("/apworlds", handleListApworlds(svc))
 		r.Post("/apworlds", handleUploadApworld(svc))
 		r.Get("/apworlds/{hash}/yaml", handleGetApworldTemplate(svc))
