@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -22,11 +23,11 @@ func (t redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return http.DefaultTransport.RoundTrip(req)
 }
 
-func testClient(t *testing.T, handler http.HandlerFunc) (*Client, *int) {
+func testClient(t *testing.T, handler http.HandlerFunc) (*Client, *atomic.Int32) {
 	t.Helper()
-	calls := 0
+	calls := &atomic.Int32{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		handler(w, r)
 	}))
 	t.Cleanup(srv.Close)
@@ -35,15 +36,15 @@ func testClient(t *testing.T, handler http.HandlerFunc) (*Client, *int) {
 	return &Client{
 		http: &http.Client{Transport: redirectTransport{target: target}},
 		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}, &calls
+	}, calls
 }
 
 // Story 38.8: a verdict records the id of the image that produced it, which also tells a
 // re-push on the same tag apart.
 func TestImageIDInspectsTheImage(t *testing.T) {
-	var path string
+	var path atomic.Value
 	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		path = r.URL.Path
+		path.Store(r.URL.Path)
 		_, _ = w.Write([]byte(`{"Id":"sha256:abc123","RepoTags":["ghcr.io/archilan-dev/archipelago:0.16.1"]}`))
 	})
 
@@ -55,8 +56,8 @@ func TestImageIDInspectsTheImage(t *testing.T) {
 	if id != "sha256:abc123" {
 		t.Errorf("expected sha256:abc123, got %q", id)
 	}
-	if !strings.HasSuffix(path, "/images/ghcr.io/archilan-dev/archipelago:0.16.1/json") {
-		t.Errorf("unexpected inspect path %q", path)
+	if p, _ := path.Load().(string); !strings.HasSuffix(p, "/images/ghcr.io/archilan-dev/archipelago:0.16.1/json") {
+		t.Errorf("unexpected inspect path %q", p)
 	}
 }
 
@@ -68,8 +69,8 @@ func TestImageIDIsCachedForTheSameReference(t *testing.T) {
 	_, _ = c.ImageID(context.Background(), "archipelago:latest")
 	_, _ = c.ImageID(context.Background(), "archipelago:latest")
 
-	if *calls != 1 {
-		t.Errorf("expected one inspection, got %d", *calls)
+	if calls.Load() != 1 {
+		t.Errorf("expected one inspection, got %d", calls.Load())
 	}
 }
 
@@ -85,8 +86,8 @@ func TestImageIDIsInspectedAgainForAnotherReferenceOrOnceStale(t *testing.T) {
 	now = now.Add(imageIDTTL + time.Second)
 	_, _ = c.ImageID(context.Background(), "archipelago:0.16.1")
 
-	if *calls != 3 {
-		t.Errorf("expected three inspections, got %d", *calls)
+	if calls.Load() != 3 {
+		t.Errorf("expected three inspections, got %d", calls.Load())
 	}
 }
 
@@ -100,5 +101,44 @@ func TestImageIDFailsWhenTheImageIsUnknown(t *testing.T) {
 
 	if err == nil || id != "" {
 		t.Errorf("expected an error and no id, got %q, %v", id, err)
+	}
+}
+
+// Story 38.8 review: a verdict names the image of the container that produced it, not whatever the
+// tag points to when the test ends.
+func TestContainerImageIDReadsTheImageTheContainerWasCreatedFrom(t *testing.T) {
+	var path atomic.Value
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		path.Store(r.URL.Path)
+		_, _ = w.Write([]byte(`{"Id":"c1","Image":"sha256:fromthecontainer","Config":{"Image":"archipelago:latest"}}`))
+	})
+
+	id, err := c.containerImageID(context.Background(), "c1")
+
+	if err != nil || id != "sha256:fromthecontainer" {
+		t.Errorf("expected the container's image, got %q, %v", id, err)
+	}
+	if p, _ := path.Load().(string); !strings.HasSuffix(p, "/containers/c1/json") {
+		t.Errorf("unexpected inspect path %q", p)
+	}
+}
+
+// A hung Docker socket must not hang GET /runtime: the inspection has its own deadline.
+func TestImageIDGivesUpOnAHungDaemon(t *testing.T) {
+	release := make(chan struct{})
+	c, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	})
+	defer close(release)
+	c.inspectTimeout = 50 * time.Millisecond
+
+	start := time.Now()
+	_, err := c.ImageID(context.Background(), "archipelago:latest")
+
+	if err == nil {
+		t.Fatal("expected a timeout error")
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Errorf("the inspection did not honour its deadline")
 	}
 }

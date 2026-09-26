@@ -64,3 +64,35 @@ func TestACompletedVerdictRecordsTheImageItRanOn(t *testing.T) {
 		t.Errorf("expected %+v, got %+v", want, p)
 	}
 }
+
+// Story 38.8 review: a skipped verdict ran nothing, so it names no image; a finished one names the
+// image of the container that actually ran.
+func TestOnlyAVerdictThatRanNamesAnImage(t *testing.T) {
+	ran := verdictImage(PreflightStatusFailed, "archipelago:latest", "sha256:ran")
+	if ran != (RuntimeInfo{APImage: "archipelago:latest", APImageID: "sha256:ran"}) {
+		t.Errorf("expected the image that ran, got %+v", ran)
+	}
+	if skipped := verdictImage(PreflightStatusSkipped, "archipelago:latest", "sha256:ran"); skipped != (RuntimeInfo{}) {
+		t.Errorf("a skipped verdict ran nothing, got %+v", skipped)
+	}
+}
+
+// A verdict being recomputed is unknown: it must not keep claiming the image of the previous run.
+func TestAPendingVerdictForgetsThePreviousImage(t *testing.T) {
+	p := storage.ApworldPreflight{Status: PreflightStatusPassed, Error: "old", Overridden: true, Image: "archipelago:0.16.0", ImageID: "sha256:old"}
+
+	markPending(&p)
+
+	want := storage.ApworldPreflight{Status: PreflightStatusPending, Overridden: true}
+	if p != want {
+		t.Errorf("expected %+v, got %+v", want, p)
+	}
+}
+
+func TestRuntimeWithoutAnInspectorKeepsTheReference(t *testing.T) {
+	got := runtimeService(nil).Runtime(context.Background())
+
+	if got != (RuntimeInfo{APImage: "ghcr.io/archilan-dev/archipelago:0.16.1"}) {
+		t.Errorf("expected the reference alone, got %+v", got)
+	}
+}

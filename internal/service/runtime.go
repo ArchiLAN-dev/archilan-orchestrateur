@@ -11,8 +11,8 @@ import (
 // reference (`AP_IMAGE`) and the id of the local image it points to. The reference alone says
 // nothing locally (`archipelago:latest`) and misses a re-pushed tag; the id covers both.
 type RuntimeInfo struct {
-	APImage   string `json:"apImage"`
-	APImageID string `json:"apImageId"`
+	APImage   string
+	APImageID string
 }
 
 type imageInspector interface {
@@ -23,6 +23,9 @@ type imageInspector interface {
 // logged: it must never keep a verdict from being recorded.
 func (s *Service) Runtime(ctx context.Context) RuntimeInfo {
 	info := RuntimeInfo{APImage: s.cfg.APImage}
+	if s.images == nil {
+		return info
+	}
 	id, err := s.images.ImageID(ctx, s.cfg.APImage)
 	if err != nil {
 		s.log.Warn("could not inspect the archipelago image", "image", s.cfg.APImage, "err", err)
@@ -40,4 +43,23 @@ func applyVerdict(p *storage.ApworldPreflight, status, errExcerpt string, checke
 	p.CheckedAt = checkedAt.UTC().Format(time.RFC3339)
 	p.Image = rt.APImage
 	p.ImageID = rt.APImageID
+}
+
+// verdictImage names the image a finished verdict ran on (story 38.8 review): the configured
+// reference and the id of the container's own image. A skipped verdict ran nothing.
+func verdictImage(status, ref, imageID string) RuntimeInfo {
+	if status == PreflightStatusSkipped {
+		return RuntimeInfo{}
+	}
+	return RuntimeInfo{APImage: ref, APImageID: imageID}
+}
+
+// markPending opens a new run of the verdict: its outcome and the image it ran on are unknown
+// again. The admin's override survives (only the override endpoint toggles it).
+func markPending(p *storage.ApworldPreflight) {
+	p.Status = PreflightStatusPending
+	p.Error = ""
+	p.CheckedAt = ""
+	p.Image = ""
+	p.ImageID = ""
 }

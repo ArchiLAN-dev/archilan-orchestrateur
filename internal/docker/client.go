@@ -47,6 +47,8 @@ type Client struct {
 	imageRef    string
 	imageID     string
 	imageSeenAt time.Time
+	// inspectTimeout bounds one image inspection; zero means the default (story 38.8 review).
+	inspectTimeout time.Duration
 }
 
 func New(cfg *config.Config, log *slog.Logger) (*Client, error) {
@@ -598,7 +600,11 @@ func (c *Client) GenerateTemplate(ctx context.Context, apworldData []byte, hash 
 // for official worlds already bundled in the image (the worlds/ directory is then omitted).
 // Returns nil when the generation succeeds; on failure the error carries the stderr tail,
 // which ends with the Python traceback.
-func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte) error {
+//
+// It returns the id of the image the container was created from (story 38.8), even when the
+// generation failed: a verdict names the image that actually ran. An inspection failure leaves it
+// empty and is only logged.
+func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte) (string, error) {
 	var tarBuf bytes.Buffer
 	tw := tar.NewWriter(&tarBuf)
 	if len(apworldData) > 0 {
@@ -620,28 +626,33 @@ func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash
 	}
 	containerID, err := c.createOneShot(ctx, c.cfg.APImage, cmd)
 	if err != nil {
-		return fmt.Errorf("create preflight container: %w", err)
+		return "", fmt.Errorf("create preflight container: %w", err)
 	}
 	defer func() { _ = c.Remove(context.WithoutCancel(ctx), containerID) }()
 
+	imageID, inspectErr := c.containerImageID(ctx, containerID)
+	if inspectErr != nil {
+		c.log.Warn("could not read the image of the preflight container", "container", containerID, "err", inspectErr)
+	}
+
 	if err := c.putArchiveTo(ctx, containerID, "/tmp", &tarBuf); err != nil {
-		return fmt.Errorf("copy apworld to preflight container: %w", err)
+		return imageID, fmt.Errorf("copy apworld to preflight container: %w", err)
 	}
 
 	if err := c.startContainer(ctx, containerID); err != nil {
-		return fmt.Errorf("start preflight container: %w", err)
+		return imageID, fmt.Errorf("start preflight container: %w", err)
 	}
 
 	exitCode, err := c.waitContainer(ctx, containerID)
 	if err != nil {
-		return fmt.Errorf("wait for preflight container: %w", err)
+		return imageID, fmt.Errorf("wait for preflight container: %w", err)
 	}
 
 	if exitCode != 0 {
 		stderr, _ := c.containerLogs(ctx, containerID, false, true)
-		return fmt.Errorf("preflight generation exited %d: %s", exitCode, bytes.TrimSpace(stderr))
+		return imageID, fmt.Errorf("preflight generation exited %d: %s", exitCode, bytes.TrimSpace(stderr))
 	}
-	return nil
+	return imageID, nil
 }
 
 // ---------------------------------------------------------------------------
