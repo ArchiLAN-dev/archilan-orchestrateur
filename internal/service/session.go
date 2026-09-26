@@ -100,6 +100,10 @@ type serverOptionsJSON struct {
 	LocationCheckPoints *int   `json:"locationCheckPoints,omitempty"`
 	AutoShutdown        *int   `json:"autoShutdown,omitempty"`
 	Compatibility       *int   `json:"compatibility,omitempty"`
+	// SlotNames is stored with the options because the bridge needs it on every launch of a seed
+	// generated elsewhere, not only the first: without it, a relaunch asks for a "Bridge" slot
+	// the seed does not have and nothing is tracked any more (story 16.20).
+	SlotNames []SlotName `json:"slotNames,omitempty"`
 }
 
 // marshalServerOptions serializes the optional AP server_options of a launch request for storage.
@@ -114,6 +118,7 @@ func marshalServerOptions(req LaunchRequest) (string, error) {
 		LocationCheckPoints: req.LocationCheckPoints,
 		AutoShutdown:        req.AutoShutdown,
 		Compatibility:       req.Compatibility,
+		SlotNames:           req.SlotNames,
 	})
 	return string(b), err
 }
@@ -134,6 +139,7 @@ func applyServerOptions(req *LaunchRequest, blob string) error {
 	req.LocationCheckPoints = o.LocationCheckPoints
 	req.AutoShutdown = o.AutoShutdown
 	req.Compatibility = o.Compatibility
+	req.SlotNames = o.SlotNames
 	return nil
 }
 
