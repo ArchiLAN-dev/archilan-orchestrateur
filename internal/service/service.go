@@ -37,8 +37,10 @@ type Service struct {
 	webhook *webhook.Sender
 	storage *storage.Client // nil if Minio not configured
 	images  imageInspector  // the image verdicts are stamped with (story 38.8)
-	cfg     *config.Config
-	log     *slog.Logger
+	// containers stops containers by name at boot recovery (story 17.26); the docker client in prod.
+	containers containerStopper
+	cfg        *config.Config
+	log        *slog.Logger
 
 	// Preflight test generations (stories 9.38/9.42): shared container-concurrency budget
 	// and the in-memory slot-preflight job registry.
@@ -62,14 +64,15 @@ func New(
 	}
 
 	return &Service{
-		db:      database,
-		docker:  dockerClient,
-		pool:    pool,
-		webhook: webhookSender,
-		storage: storageCl,
-		images:  dockerClient,
-		cfg:     cfg,
-		log:     log,
+		db:         database,
+		docker:     dockerClient,
+		pool:       pool,
+		webhook:    webhookSender,
+		storage:    storageCl,
+		images:     dockerClient,
+		containers: dockerClient,
+		cfg:        cfg,
+		log:        log,
 
 		preflightSem:   make(chan struct{}, maxConcurrent),
 		slotPreflights: map[string]*SlotPreflight{},
@@ -308,8 +311,20 @@ func (s *Service) GetApworldTemplate(ctx context.Context, hash string) ([]byte, 
 	return data, nil
 }
 
+type containerStopper interface {
+	Stop(ctx context.Context, containerID string) error
+}
+
 // RecoverFromDB restores the port pool from persisted container and session records.
+//
+// Sessions caught mid-generation or mid-launch by the restart are crashed FIRST (story 17.26): their
+// goroutines died with the old process, so nothing else would ever release their ports, and a
+// reservation made before the crash kept those ports out of the pool until the next restart.
 func (s *Service) RecoverFromDB(ctx context.Context) error {
+	if err := s.crashInterruptedSessions(ctx); err != nil {
+		return fmt.Errorf("crash interrupted sessions: %w", err)
+	}
+
 	// Recover legacy Bridge-only container ports
 	ports, err := s.db.AllPorts()
 	if err != nil {
@@ -320,7 +335,7 @@ func (s *Service) RecoverFromDB(ctx context.Context) error {
 		s.log.Info("recovered container from db", "session_id", sessionID, "port", port)
 	}
 
-	// Recover session ports
+	// Recover session ports: only running sessions hold one (see AllSessionPorts).
 	sessionPorts, err := s.db.AllSessionPorts()
 	if err != nil {
 		return fmt.Errorf("recover sessions: %w", err)
@@ -330,6 +345,40 @@ func (s *Service) RecoverFromDB(ctx context.Context) error {
 		s.log.Info("recovered session port from db", "session_id", sessionID, "port", port)
 	}
 
+	return nil
+}
+
+// crashInterruptedSessions crashes the sessions a restart caught in generation or launch and tells
+// the API, which would otherwise wait for its own watchdog. An interrupted launch may have left its
+// containers running, by their well-known names since their ids are only persisted on "running":
+// they are stopped so they release the host port before it goes back to the pool.
+func (s *Service) crashInterruptedSessions(ctx context.Context) error {
+	sessions, err := s.db.ListSessions()
+	if err != nil {
+		return err
+	}
+	var interrupted []*db.Session
+	for _, sess := range sessions {
+		switch sess.Status {
+		case "launching":
+			_ = s.containers.Stop(ctx, fmt.Sprintf("archilan-bridge-%s", sess.SessionID))
+			_ = s.containers.Stop(ctx, fmt.Sprintf("ap-server-%s", sess.SessionID))
+			interrupted = append(interrupted, sess)
+		case "generating":
+			interrupted = append(interrupted, sess)
+		}
+	}
+	if err := s.db.CrashAllTransitSessions(); err != nil {
+		return err
+	}
+	for _, sess := range interrupted {
+		s.log.Warn("boot recovery: crashing session interrupted by the restart", "session_id", sess.SessionID, "status", sess.Status)
+		s.webhook.Send(ctx, webhook.Payload{
+			Event:     "session.crashed",
+			SessionID: sess.SessionID,
+			Error:     fmt.Sprintf("orchestrateur restarted while %s", sess.Status),
+		})
+	}
 	return nil
 }
 

@@ -227,11 +227,15 @@ func (db *DB) ListRunningSessionsForReconciliation() ([]*Session, error) {
 	return result, rows.Err()
 }
 
-// AllSessionPorts returns a map of bridge_port → session_id for all non-terminal sessions.
+// AllSessionPorts returns a map of bridge_port → session_id for the sessions that hold their port:
+// the running ones. Every other status either released it (stopped, crashed) or keeps a stale value
+// from a previous launch (a session reset to "generated" for a relaunch) that the pool may since
+// have handed to a live session - reserving it would steal that port's ownership (story 17.26).
+// Called after boot recovery crashed the interrupted launches.
 func (db *DB) AllSessionPorts() (map[int]string, error) {
 	rows, err := db.Query(`
 		SELECT bridge_port, session_id FROM sessions
-		WHERE bridge_port IS NOT NULL AND status NOT IN ('stopped', 'crashed')`)
+		WHERE bridge_port IS NOT NULL AND status = 'running'`)
 	if err != nil {
 		return nil, err
 	}
