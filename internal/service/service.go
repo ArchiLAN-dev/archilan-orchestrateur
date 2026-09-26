@@ -36,6 +36,7 @@ type Service struct {
 	pool    *portpool.Pool
 	webhook *webhook.Sender
 	storage *storage.Client // nil if Minio not configured
+	images  imageInspector  // the image verdicts are stamped with (story 38.8)
 	cfg     *config.Config
 	log     *slog.Logger
 
@@ -66,6 +67,7 @@ func New(
 		pool:    pool,
 		webhook: webhookSender,
 		storage: storageCl,
+		images:  dockerClient,
 		cfg:     cfg,
 		log:     log,
 

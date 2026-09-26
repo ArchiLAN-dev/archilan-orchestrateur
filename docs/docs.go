@@ -99,6 +99,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/apworlds/{hash}/introspect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Re-runs introspection against the apworld already in storage and replaces the types\nsidecar (story 9.53). Introspection otherwise runs only once, at upload, so a world\nintrospected by an older image keeps its old answer until this is called.\nOn failure nothing is written: the sidecar also carries range bounds, option types\nand the location list, and blanking it would cost more than the refresh gains.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Re-run option introspection on the stored apworld",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ApworldOptionsIntrospectionResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/apworlds/{hash}/locations": {
             "get": {
                 "security": [
@@ -713,6 +759,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/multidata/inspect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs a one-shot, network-disabled Archipelago container to read slot_info out of\nan output .zip or bare .archipelago, using Archipelago's own allowlisting\nunpickler. Returns {\"seedName\": \"...\", \"slots\": [...]} or {\"error\": \"...\"} when\nthe archive carries no usable multidata.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Read the slot table of a pre-generated output archive",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "The output .zip or .archipelago file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/preflight-generations": {
             "post": {
                 "security": [
@@ -797,6 +893,37 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtime": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the Archipelago image the orchestrator runs: the configured reference\n(AP_IMAGE) and the id of the local image it points to. The id is empty when the\nimage could not be inspected. Apworld verdicts carry the same pair (story 38.8).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Archipelago image in use",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.RuntimeResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1428,6 +1555,17 @@ const docTemplate = `{
                 }
             }
         },
+        "api.ApworldOptionsIntrospectionResponse": {
+            "type": "object",
+            "properties": {
+                "hash": {
+                    "type": "string"
+                },
+                "introspected": {
+                    "type": "boolean"
+                }
+            }
+        },
         "api.ApworldOptionsResponse": {
             "type": "object",
             "properties": {
@@ -1448,6 +1586,15 @@ const docTemplate = `{
                 },
                 "error": {
                     "type": "string"
+                },
+                "image": {
+                    "description": "Image and ImageID name the Archipelago image the verdict was produced with (story 38.8);\nabsent on a verdict older than that story.",
+                    "type": "string",
+                    "example": "ghcr.io/archilan-dev/archipelago:0.16.1"
+                },
+                "imageId": {
+                    "type": "string",
+                    "example": "sha256:4b1c2d"
                 },
                 "overridden": {
                     "type": "boolean"
@@ -1608,6 +1755,17 @@ const docTemplate = `{
                 }
             }
         },
+        "api.DictSubOption": {
+            "type": "object",
+            "properties": {
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "api.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -1687,6 +1845,13 @@ const docTemplate = `{
                 },
                 "serverPassword": {
                     "type": "string"
+                },
+                "slotNames": {
+                    "description": "SlotNames is the multiworld roster the bridge attaches by (story 16.18). Omitted on a\ngenerated seed, whose injected observer slot the bridge already knows how to find.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SlotName"
+                    }
                 }
             }
         },
@@ -1763,6 +1928,19 @@ const docTemplate = `{
                 },
                 "slotId": {
                     "type": "string"
+                }
+            }
+        },
+        "api.RuntimeResponse": {
+            "type": "object",
+            "properties": {
+                "apImage": {
+                    "type": "string",
+                    "example": "ghcr.io/archilan-dev/archipelago:0.16.1"
+                },
+                "apImageId": {
+                    "type": "string",
+                    "example": "sha256:4b1c2d"
                 }
             }
         },
@@ -1865,6 +2043,13 @@ const docTemplate = `{
                 "key": {
                     "type": "string"
                 },
+                "keys": {
+                    "description": "Keys maps a sub-setting of an OptionDict to the values it accepts (story 9.51). Present\nonly when the world declared a ` + "`" + `schema` + "`" + ` for it; empty for every other type.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.DictSubOption"
+                    }
+                },
                 "rangeMax": {
                     "type": "integer"
                 },
@@ -1873,6 +2058,13 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                },
+                "validKeys": {
+                    "description": "ValidKeys lists the sub-settings an OptionDict accepts (story 9.33). Empty for every\nother type, and for a dict whose introspection does not know them.\n\nNot to be confused with Keys below: ValidKeys holds sub-setting NAMES, Keys holds the\nVALUES each of them accepts. Reading one as the other is how a dropdown ends up\noffering key names as if they were values.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "validValues": {
                     "type": "array",
@@ -1900,6 +2092,17 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/api.TemplateOption"
                     }
+                }
+            }
+        },
+        "service.SlotName": {
+            "type": "object",
+            "properties": {
+                "game": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         }

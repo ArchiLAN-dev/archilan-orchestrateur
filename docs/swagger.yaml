@@ -23,6 +23,13 @@ definitions:
           type: string
         type: array
     type: object
+  api.ApworldOptionsIntrospectionResponse:
+    properties:
+      hash:
+        type: string
+      introspected:
+        type: boolean
+    type: object
   api.ApworldOptionsResponse:
     properties:
       options:
@@ -36,6 +43,15 @@ definitions:
         example: "2026-07-30T12:00:00Z"
         type: string
       error:
+        type: string
+      image:
+        description: |-
+          Image and ImageID name the Archipelago image the verdict was produced with (story 38.8);
+          absent on a verdict older than that story.
+        example: ghcr.io/archilan-dev/archipelago:0.16.1
+        type: string
+      imageId:
+        example: sha256:4b1c2d
         type: string
       overridden:
         type: boolean
@@ -143,6 +159,13 @@ definitions:
         example: starting
         type: string
     type: object
+  api.DictSubOption:
+    properties:
+      values:
+        items:
+          type: string
+        type: array
+    type: object
   api.ErrorResponse:
     properties:
       error:
@@ -200,6 +223,13 @@ definitions:
         type: string
       serverPassword:
         type: string
+      slotNames:
+        description: |-
+          SlotNames is the multiworld roster the bridge attaches by (story 16.18). Omitted on a
+          generated seed, whose injected observer slot the bridge already knows how to find.
+        items:
+          $ref: '#/definitions/service.SlotName'
+        type: array
     type: object
   api.OverridePreflightRequest:
     properties:
@@ -248,6 +278,15 @@ definitions:
       proposedName:
         type: string
       slotId:
+        type: string
+    type: object
+  api.RuntimeResponse:
+    properties:
+      apImage:
+        example: ghcr.io/archilan-dev/archipelago:0.16.1
+        type: string
+      apImageId:
+        example: sha256:4b1c2d
         type: string
     type: object
   api.SessionResponse:
@@ -316,12 +355,30 @@ definitions:
         type: string
       key:
         type: string
+      keys:
+        additionalProperties:
+          $ref: '#/definitions/api.DictSubOption'
+        description: |-
+          Keys maps a sub-setting of an OptionDict to the values it accepts (story 9.51). Present
+          only when the world declared a `schema` for it; empty for every other type.
+        type: object
       rangeMax:
         type: integer
       rangeMin:
         type: integer
       type:
         type: string
+      validKeys:
+        description: |-
+          ValidKeys lists the sub-settings an OptionDict accepts (story 9.33). Empty for every
+          other type, and for a dict whose introspection does not know them.
+
+          Not to be confused with Keys below: ValidKeys holds sub-setting NAMES, Keys holds the
+          VALUES each of them accepts. Reading one as the other is how a dropdown ends up
+          offering key names as if they were values.
+        items:
+          type: string
+        type: array
       validValues:
         items:
           type: string
@@ -340,6 +397,13 @@ definitions:
         items:
           $ref: '#/definitions/api.TemplateOption'
         type: array
+    type: object
+  service.SlotName:
+    properties:
+      game:
+        type: string
+      name:
+        type: string
     type: object
 info:
   contact: {}
@@ -401,6 +465,40 @@ paths:
       security:
       - BearerAuth: []
       summary: Upload an apworld and generate its YAML template
+      tags:
+      - apworlds
+  /apworlds/{hash}/introspect:
+    post:
+      description: |-
+        Re-runs introspection against the apworld already in storage and replaces the types
+        sidecar (story 9.53). Introspection otherwise runs only once, at upload, so a world
+        introspected by an older image keeps its old answer until this is called.
+        On failure nothing is written: the sidecar also carries range bounds, option types
+        and the location list, and blanking it would cost more than the refresh gains.
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ApworldOptionsIntrospectionResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Re-run option introspection on the stored apworld
       tags:
       - apworlds
   /apworlds/{hash}/locations:
@@ -799,6 +897,42 @@ paths:
       summary: Health check
       tags:
       - system
+  /multidata/inspect:
+    post:
+      consumes:
+      - multipart/form-data
+      description: |-
+        Runs a one-shot, network-disabled Archipelago container to read slot_info out of
+        an output .zip or bare .archipelago, using Archipelago's own allowlisting
+        unpickler. Returns {"seedName": "...", "slots": [...]} or {"error": "..."} when
+        the archive carries no usable multidata.
+      parameters:
+      - description: The output .zip or .archipelago file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Read the slot table of a pre-generated output archive
+      tags:
+      - sessions
   /preflight-generations:
     post:
       consumes:
@@ -858,6 +992,28 @@ paths:
       summary: Get the state of a slot preflight generation
       tags:
       - preflight
+  /runtime:
+    get:
+      description: |-
+        Returns the Archipelago image the orchestrator runs: the configured reference
+        (AP_IMAGE) and the id of the local image it points to. The id is empty when the
+        image could not be inspected. Apworld verdicts carry the same pair (story 38.8).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.RuntimeResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Archipelago image in use
+      tags:
+      - system
   /sessions/{sessionId}:
     delete:
       description: Force-removes all resources for a session (containers, volume,

@@ -204,6 +204,8 @@ func apiPreflight(p *storage.ApworldPreflight) *ApworldPreflight {
 		Error:      p.Error,
 		CheckedAt:  p.CheckedAt,
 		Overridden: p.Overridden,
+		Image:      p.Image,
+		ImageID:    p.ImageID,
 	}
 }
 
