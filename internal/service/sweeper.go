@@ -10,13 +10,9 @@ import (
 	"archilan.fr/orchestrateur/internal/webhook"
 )
 
-// RunSweeper performs boot recovery and then periodically checks for stuck/dead sessions.
+// RunSweeper periodically checks for stuck/dead sessions. Boot recovery (crashing the sessions a
+// restart interrupted) runs earlier, in RecoverFromDB, before any port is reserved.
 func (s *Service) RunSweeper(ctx context.Context) {
-	// Boot recovery: crash all sessions stuck in transit (goroutines died with old process)
-	if err := s.db.CrashAllTransitSessions(); err != nil {
-		s.log.Error("boot recovery failed", "err", err)
-	}
-
 	ticker := time.NewTicker(s.cfg.SweeperInterval)
 	defer ticker.Stop()
 	for {
