@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
+
+	"archilan.fr/orchestrateur/internal/db"
 )
 
 const luigiTemplate = `game: Luigi's Mansion
@@ -164,9 +167,9 @@ func TestTarToZipAndBack_roundTrip(t *testing.T) {
 	tw := tar.NewWriter(&tbuf)
 	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
 	files := map[string]string{
-		"AP_42.archipelago":     "MULTIDATA",
+		"AP_42.archipelago":       "MULTIDATA",
 		"AP_42_P1_Jean.apemerald": "PATCHBYTES",
-		"AP_42_Spoiler.txt":     "SPOILER",
+		"AP_42_Spoiler.txt":       "SPOILER",
 	}
 	for name, content := range files {
 		_ = tw.WriteHeader(&tar.Header{Name: "output/" + name, Mode: 0644, Size: int64(len(content))})
@@ -275,5 +278,45 @@ func TestBuildOutputArtifact_looseFilesZipped(t *testing.T) {
 	}
 	if len(zr.File) != len(files) {
 		t.Errorf("expected %d entries, got %d", len(files), len(zr.File))
+	}
+}
+
+// Story 16.20: a seed generated elsewhere has no "Bridge" observer slot, so the bridge attaches to
+// the first slot of the roster. The roster was not stored with the other options, so a relaunch
+// (resume from save, restart after a crash) started the bridge without it: it asked for a "Bridge"
+// slot that does not exist, was refused, and nothing was tracked from then on.
+func TestWithStoredServerOptions_replaysTheImportedSeedRoster(t *testing.T) {
+	svc, d, _, _ := recoveryService(t, &db.Session{SessionID: "imported", Status: "stopped"})
+	roster := []SlotName{{Name: "3nvieux", Game: "Minecraft Dig"}, {Name: "Lone", Game: "Librarian Tidy Up the Arcane Library"}}
+
+	blob, err := marshalServerOptions(LaunchRequest{SessionID: "imported", SlotNames: roster})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := d.SaveSessionServerOptions("imported", blob); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	relaunch, err := svc.withStoredServerOptions("imported", LaunchRequest{SessionID: "imported"})
+	if err != nil {
+		t.Fatalf("relaunch options: %v", err)
+	}
+	if !slices.Equal(relaunch.SlotNames, roster) {
+		t.Fatalf("relaunch roster = %v, want %v", relaunch.SlotNames, roster)
+	}
+}
+
+// Our own seeds carry the observer slot and are launched without a roster: a relaunch keeps it that way.
+func TestWithStoredServerOptions_keepsNoRosterForAGeneratedSeed(t *testing.T) {
+	blob, err := marshalServerOptions(LaunchRequest{SessionID: "own"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := LaunchRequest{SessionID: "own"}
+	if err := applyServerOptions(&got, blob); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got.SlotNames != nil {
+		t.Fatalf("roster = %v, want none", got.SlotNames)
 	}
 }
