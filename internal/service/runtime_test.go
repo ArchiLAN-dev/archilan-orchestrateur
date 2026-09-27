@@ -65,6 +65,31 @@ func TestACompletedVerdictRecordsTheImageItRanOn(t *testing.T) {
 	}
 }
 
+// Story 38.10: the override is the admin's "force allow" for a failed verdict. Once the version
+// passes, it has nothing left to allow - and kept, it made the rolling catalogue test skip the
+// version for good and silenced any later failure as "ignored". A pass clears it; a failure keeps
+// it (see above), so a forced version stays selectable.
+func TestAPassedVerdictClearsTheOverride(t *testing.T) {
+	p := storage.ApworldPreflight{Status: PreflightStatusPending, Overridden: true}
+
+	applyVerdict(&p, PreflightStatusPassed, "", time.Date(2026, 9, 27, 1, 41, 0, 0, time.UTC), RuntimeInfo{APImage: "archipelago:0.16.3"})
+
+	if p.Overridden {
+		t.Errorf("a passed verdict kept the override: %+v", p)
+	}
+}
+
+// A skipped verdict tested nothing: it proves nothing either way, so the override stays.
+func TestASkippedVerdictKeepsTheOverride(t *testing.T) {
+	p := storage.ApworldPreflight{Status: PreflightStatusPending, Overridden: true}
+
+	applyVerdict(&p, PreflightStatusSkipped, "", time.Date(2026, 9, 27, 1, 41, 0, 0, time.UTC), RuntimeInfo{})
+
+	if !p.Overridden {
+		t.Errorf("a skipped verdict dropped the override: %+v", p)
+	}
+}
+
 // Story 38.8 review: a skipped verdict ran nothing, so it names no image; a finished one names the
 // image of the container that actually ran.
 func TestOnlyAVerdictThatRanNamesAnImage(t *testing.T) {

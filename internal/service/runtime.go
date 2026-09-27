@@ -35,14 +35,19 @@ func (s *Service) Runtime(ctx context.Context) RuntimeInfo {
 	return info
 }
 
-// applyVerdict writes a completed verdict with the image it ran on, keeping the admin's
-// override (only the override endpoint toggles it).
+// applyVerdict writes a completed verdict with the image it ran on. The admin's override survives a
+// failed or skipped verdict and is cleared by a passed one (story 38.10).
 func applyVerdict(p *storage.ApworldPreflight, status, errExcerpt string, checkedAt time.Time, rt RuntimeInfo) {
 	p.Status = status
 	p.Error = errExcerpt
 	p.CheckedAt = checkedAt.UTC().Format(time.RFC3339)
 	p.Image = rt.APImage
 	p.ImageID = rt.APImageID
+	// The override is a force-allow for a failed verdict (story 38.10). A pass leaves it nothing to
+	// allow; kept, it made the rolling test skip the version and silenced any later failure.
+	if status == PreflightStatusPassed {
+		p.Overridden = false
+	}
 }
 
 // verdictImage names the image a finished verdict ran on (story 38.8 review): the configured

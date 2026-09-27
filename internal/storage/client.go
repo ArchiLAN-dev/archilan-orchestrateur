@@ -34,8 +34,8 @@ type ApworldRef struct {
 
 // ApworldPreflight is the upload-time solo test-generation verdict (story 9.38).
 // Status: "pending" | "passed" | "failed" | "skipped" (no template to test with).
-// Overridden is the admin's "force allow" escape hatch for a failed verdict and
-// must survive re-checks (only the override endpoint toggles it).
+// Overridden is the admin's "force allow" escape hatch for a failed verdict. It survives a
+// re-check that fails again, and a passed verdict clears it: it has nothing left to allow (story 38.10).
 type ApworldPreflight struct {
 	Status     string `json:"status,omitempty"`
 	Error      string `json:"error,omitempty"`
