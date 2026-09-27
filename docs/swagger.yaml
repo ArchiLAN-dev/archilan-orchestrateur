@@ -59,6 +59,10 @@ definitions:
         description: pending | passed | failed | skipped
         example: passed
         type: string
+      warning:
+        description: Warning is what the generator reported on a pass (story 38.12),
+          e.g. an accessibility check not met.
+        type: string
     type: object
   api.ApworldPreflightResponse:
     properties:

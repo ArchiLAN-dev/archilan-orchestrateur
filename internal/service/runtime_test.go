@@ -50,7 +50,7 @@ func TestACompletedVerdictRecordsTheImageItRanOn(t *testing.T) {
 	p := storage.ApworldPreflight{Status: PreflightStatusPending, Overridden: true}
 	at := time.Date(2026, 9, 26, 4, 0, 0, 0, time.UTC)
 
-	applyVerdict(&p, PreflightStatusFailed, "FillError", at, RuntimeInfo{APImage: "archipelago:0.16.1", APImageID: "sha256:abc123"})
+	applyVerdict(&p, PreflightStatusFailed, "FillError", "", at, RuntimeInfo{APImage: "archipelago:0.16.1", APImageID: "sha256:abc123"})
 
 	want := storage.ApworldPreflight{
 		Status:     PreflightStatusFailed,
@@ -72,7 +72,7 @@ func TestACompletedVerdictRecordsTheImageItRanOn(t *testing.T) {
 func TestAPassedVerdictClearsTheOverride(t *testing.T) {
 	p := storage.ApworldPreflight{Status: PreflightStatusPending, Overridden: true}
 
-	applyVerdict(&p, PreflightStatusPassed, "", time.Date(2026, 9, 27, 1, 41, 0, 0, time.UTC), RuntimeInfo{APImage: "archipelago:0.16.3"})
+	applyVerdict(&p, PreflightStatusPassed, "", "", time.Date(2026, 9, 27, 1, 41, 0, 0, time.UTC), RuntimeInfo{APImage: "archipelago:0.16.3"})
 
 	if p.Overridden {
 		t.Errorf("a passed verdict kept the override: %+v", p)
@@ -83,7 +83,7 @@ func TestAPassedVerdictClearsTheOverride(t *testing.T) {
 func TestASkippedVerdictKeepsTheOverride(t *testing.T) {
 	p := storage.ApworldPreflight{Status: PreflightStatusPending, Overridden: true}
 
-	applyVerdict(&p, PreflightStatusSkipped, "", time.Date(2026, 9, 27, 1, 41, 0, 0, time.UTC), RuntimeInfo{})
+	applyVerdict(&p, PreflightStatusSkipped, "", "", time.Date(2026, 9, 27, 1, 41, 0, 0, time.UTC), RuntimeInfo{})
 
 	if !p.Overridden {
 		t.Errorf("a skipped verdict dropped the override: %+v", p)
@@ -102,9 +102,26 @@ func TestOnlyAVerdictThatRanNamesAnImage(t *testing.T) {
 	}
 }
 
+// Story 38.12: a pass with a warning (accessibility not met, as the Launcher allows) keeps its text; the
+// next verdict replaces it, whatever its outcome.
+func TestAPassedVerdictCarriesItsWarningUntilTheNextOne(t *testing.T) {
+	at := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	p := storage.ApworldPreflight{Status: PreflightStatusPending}
+
+	applyVerdict(&p, PreflightStatusPassed, "", "Missing: [A]", at, RuntimeInfo{APImage: "archipelago:0.16.4"})
+	if p.Status != PreflightStatusPassed || p.Warning != "Missing: [A]" {
+		t.Fatalf("expected a pass with its warning, got %+v", p)
+	}
+
+	applyVerdict(&p, PreflightStatusPassed, "", "", at, RuntimeInfo{APImage: "archipelago:0.16.4"})
+	if p.Warning != "" {
+		t.Errorf("a clean pass kept the old warning: %+v", p)
+	}
+}
+
 // A verdict being recomputed is unknown: it must not keep claiming the image of the previous run.
 func TestAPendingVerdictForgetsThePreviousImage(t *testing.T) {
-	p := storage.ApworldPreflight{Status: PreflightStatusPassed, Error: "old", Overridden: true, Image: "archipelago:0.16.0", ImageID: "sha256:old"}
+	p := storage.ApworldPreflight{Status: PreflightStatusPassed, Error: "old", Warning: "old warning", Overridden: true, Image: "archipelago:0.16.0", ImageID: "sha256:old"}
 
 	markPending(&p)
 

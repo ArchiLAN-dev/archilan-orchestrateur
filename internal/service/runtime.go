@@ -37,9 +37,10 @@ func (s *Service) Runtime(ctx context.Context) RuntimeInfo {
 
 // applyVerdict writes a completed verdict with the image it ran on. The admin's override survives a
 // failed or skipped verdict and is cleared by a passed one (story 38.10).
-func applyVerdict(p *storage.ApworldPreflight, status, errExcerpt string, checkedAt time.Time, rt RuntimeInfo) {
+func applyVerdict(p *storage.ApworldPreflight, status, errExcerpt, warning string, checkedAt time.Time, rt RuntimeInfo) {
 	p.Status = status
 	p.Error = errExcerpt
+	p.Warning = warning
 	p.CheckedAt = checkedAt.UTC().Format(time.RFC3339)
 	p.Image = rt.APImage
 	p.ImageID = rt.APImageID
@@ -64,6 +65,7 @@ func verdictImage(status, ref, imageID string) RuntimeInfo {
 func markPending(p *storage.ApworldPreflight) {
 	p.Status = PreflightStatusPending
 	p.Error = ""
+	p.Warning = ""
 	p.CheckedAt = ""
 	p.Image = ""
 	p.ImageID = ""

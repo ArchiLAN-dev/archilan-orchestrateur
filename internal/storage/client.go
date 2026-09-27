@@ -37,8 +37,11 @@ type ApworldRef struct {
 // Overridden is the admin's "force allow" escape hatch for a failed verdict. It survives a
 // re-check that fails again, and a passed verdict clears it: it has nothing left to allow (story 38.10).
 type ApworldPreflight struct {
-	Status     string `json:"status,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Status string `json:"status,omitempty"`
+	Error  string `json:"error,omitempty"`
+	// Warning is what the generator reported on a pass (story 38.12), e.g. an accessibility check not met
+	// that the official Launcher also lets through. Empty on a clean pass and on any other outcome.
+	Warning    string `json:"warning,omitempty"`
 	CheckedAt  string `json:"checkedAt,omitempty"` // RFC3339
 	Overridden bool   `json:"overridden,omitempty"`
 	// Image and ImageID name the Archipelago image a completed verdict was produced with

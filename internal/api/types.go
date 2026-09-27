@@ -75,8 +75,10 @@ type ApworldOptionsIntrospectionResponse struct {
 
 // ApworldPreflight is the upload-time solo test-generation verdict (story 9.38).
 type ApworldPreflight struct {
-	Status     string `json:"status" example:"passed"` // pending | passed | failed | skipped
-	Error      string `json:"error,omitempty"`
+	Status string `json:"status" example:"passed"` // pending | passed | failed | skipped
+	Error  string `json:"error,omitempty"`
+	// Warning is what the generator reported on a pass (story 38.12), e.g. an accessibility check not met.
+	Warning    string `json:"warning,omitempty"`
 	CheckedAt  string `json:"checkedAt,omitempty" example:"2026-07-30T12:00:00Z"`
 	Overridden bool   `json:"overridden"`
 	// Image and ImageID name the Archipelago image the verdict was produced with (story 38.8);

@@ -1603,6 +1603,10 @@ const docTemplate = `{
                     "description": "pending | passed | failed | skipped",
                     "type": "string",
                     "example": "passed"
+                },
+                "warning": {
+                    "description": "Warning is what the generator reported on a pass (story 38.12), e.g. an accessibility check not met.",
+                    "type": "string"
                 }
             }
         },
