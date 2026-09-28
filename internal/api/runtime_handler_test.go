@@ -60,3 +60,12 @@ func TestTheListedVerdictCarriesItsImage(t *testing.T) {
 		t.Errorf("a verdict without image must not invent one, got %s", raw)
 	}
 }
+
+// Story 38.12: a pass the generator warned about says so to the central API.
+func TestTheListedVerdictCarriesItsWarning(t *testing.T) {
+	got := apiPreflight(&storage.ApworldPreflight{Status: "passed", Warning: "Missing: [A]"})
+
+	if got.Warning != "Missing: [A]" {
+		t.Errorf("expected the warning on the verdict, got %+v", got)
+	}
+}
