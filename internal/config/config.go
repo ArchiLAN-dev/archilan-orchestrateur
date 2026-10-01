@@ -52,6 +52,9 @@ type Config struct {
 	SweeperInterval   time.Duration // default 30s
 	PreflightTimeout       time.Duration // default 5min - solo test generations (stories 9.38/9.42)
 	PreflightMaxConcurrent int           // shared cap on concurrent preflight containers (default 2)
+	// PortReservationTTL: how long a paused or crashed session keeps its port for its relaunch
+	// (story 17.27). Default 14 days; 0 disables reservations (every launch takes a fresh port).
+	PortReservationTTL time.Duration
 }
 
 func Load() *Config {
@@ -108,6 +111,7 @@ func loadFromEnv() *Config {
 		SweeperInterval:   envDuration("SWEEPER_INTERVAL", 30),
 		PreflightTimeout:       envDuration("PREFLIGHT_TIMEOUT", 300),
 		PreflightMaxConcurrent: envInt("PREFLIGHT_MAX_CONCURRENT", 2),
+		PortReservationTTL:     envDuration("PORT_RESERVATION_TTL", 14*24*3600),
 	}
 }
 

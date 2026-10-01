@@ -133,7 +133,7 @@ func (db *DB) UpdateSessionLaunching(sessionID string, bridgePort, apPort int, s
 	_, err := db.Exec(`
 		UPDATE sessions SET status = 'launching', bridge_port = ?, ap_port = ?,
 		                    server_password = ?, admin_password = ?,
-		                    status_deadline = ?, updated_at = ?
+		                    status_deadline = ?, port_reserved_until = NULL, updated_at = ?
 		WHERE session_id = ?`,
 		bridgePort, apPort, serverPassword, adminPassword, deadline, time.Now().UTC(), sessionID,
 	)
@@ -323,4 +323,46 @@ func scanSession(s scanner) (*Session, error) {
 	}
 
 	return &sess, nil
+}
+
+// PortReservation is the port a paused or crashed session keeps for its relaunch (story 17.27).
+type PortReservation struct {
+	SessionID string
+	Port      int
+	Until     time.Time
+}
+
+// SetPortReservation records that the session keeps its bridge_port until the deadline.
+func (db *DB) SetPortReservation(sessionID string, until time.Time) error {
+	_, err := db.Exec(`UPDATE sessions SET port_reserved_until = ? WHERE session_id = ?`, until.UTC(), sessionID)
+	return err
+}
+
+// ClearPortReservation forgets the session's reservation: expired, taken back, or given up.
+func (db *DB) ClearPortReservation(sessionID string) error {
+	_, err := db.Exec(`UPDATE sessions SET port_reserved_until = NULL WHERE session_id = ?`, sessionID)
+	return err
+}
+
+// ActivePortReservations returns the reservations still running past now, for the sessions that can
+// hold one: paused ("stopped") or crashed. Read at boot to rebuild the pool's holds.
+func (db *DB) ActivePortReservations(now time.Time) ([]PortReservation, error) {
+	rows, err := db.Query(`
+		SELECT session_id, bridge_port, port_reserved_until FROM sessions
+		WHERE bridge_port IS NOT NULL AND port_reserved_until IS NOT NULL
+		  AND status IN ('stopped', 'crashed') AND port_reserved_until > ?`, now.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []PortReservation
+	for rows.Next() {
+		var r PortReservation
+		if err := rows.Scan(&r.SessionID, &r.Port, &r.Until); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
 }
