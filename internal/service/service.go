@@ -345,6 +345,12 @@ func (s *Service) RecoverFromDB(ctx context.Context) error {
 		s.log.Info("recovered session port from db", "session_id", sessionID, "port", port)
 	}
 
+	// Then the ports paused or crashed sessions keep for their relaunch (story 17.27), after the
+	// running ones so a reservation never takes a port that is live.
+	if err := s.recoverPortReservations(time.Now().UTC()); err != nil {
+		return fmt.Errorf("recover port reservations: %w", err)
+	}
+
 	return nil
 }
 

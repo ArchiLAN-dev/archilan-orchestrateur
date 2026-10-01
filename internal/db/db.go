@@ -48,6 +48,9 @@ var migrations = []string{
 	// server_options: the AP server_options JSON a session was launched with, replayed on
 	// relaunch-from-save so a resumed session keeps its exact config (auto_shutdown included).
 	`ALTER TABLE sessions ADD COLUMN server_options TEXT`,
+	// port_reserved_until: deadline of the port a paused or crashed session keeps for its
+	// relaunch (story 17.27); NULL when the session holds no reservation.
+	`ALTER TABLE sessions ADD COLUMN port_reserved_until DATETIME`,
 }
 
 func migrate(sqldb *sql.DB) error {
