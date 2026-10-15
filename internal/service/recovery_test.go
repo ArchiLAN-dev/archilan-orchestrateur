@@ -14,10 +14,15 @@ import (
 	"archilan.fr/orchestrateur/internal/webhook"
 )
 
-type fakeStopper struct{ stopped []string }
+type fakeStopper struct{ stopped, removed []string }
 
 func (f *fakeStopper) Stop(_ context.Context, ref string) error {
 	f.stopped = append(f.stopped, ref)
+	return nil
+}
+
+func (f *fakeStopper) Remove(_ context.Context, ref string) error {
+	f.removed = append(f.removed, ref)
 	return nil
 }
 
@@ -100,5 +105,22 @@ func TestRecoverFromDB_reservesOnlyRunningSessions(t *testing.T) {
 	}
 	if got, _ := pool.Acquire("next"); got != 25000 {
 		t.Fatalf("next launch got port %d, want 25000 (25001 belongs to no live session either)", got)
+	}
+}
+
+// Story 44.2: a generation interrupted by a restart may have left its container behind, still holding the
+// file the launcher provided. It is removed: that file must not outlive its generation.
+func TestRecoverFromDB_removesTheContainerOfAnInterruptedGeneration(t *testing.T) {
+	svc, d, _, stopper := recoveryService(t, &db.Session{SessionID: "gen", Status: "generating"})
+
+	if err := svc.RecoverFromDB(context.Background()); err != nil {
+		t.Fatalf("recover: %v", err)
+	}
+
+	if sess, _ := d.GetSession("gen"); sess.Status != "crashed" {
+		t.Fatalf("interrupted generation status = %q, want crashed", sess.Status)
+	}
+	if !slices.Contains(stopper.removed, "archilan-gen-gen") {
+		t.Errorf("generation container not removed (removed: %v)", stopper.removed)
 	}
 }

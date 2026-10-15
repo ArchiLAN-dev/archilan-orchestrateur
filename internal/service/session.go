@@ -39,6 +39,8 @@ type GenerateRequest struct {
 	PlandoOptions []string // subset of: bosses, items, texts, connections
 	Race          *bool    // encrypted race roms + race mode
 	Spoiler       *int     // 0..3
+	// RequiredFileIDs: staged files this generation consumes (story 44.2).
+	RequiredFileIDs []string
 }
 
 var validPlandoOptions = map[string]bool{
@@ -199,6 +201,12 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 	if !validateGenerationOptions(req) {
 		return ErrInvalidGenerationOption
 	}
+	if len(req.RequiredFileIDs) > MaxRequiredFilesPerGeneration {
+		return ErrTooManyRequiredFiles
+	}
+	if !s.requiredFiles.has(req.RequiredFileIDs, time.Now()) {
+		return ErrRequiredFileExpired
+	}
 
 	existing, err := s.db.GetSession(req.SessionID)
 	if err != nil {
@@ -214,6 +222,12 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 	tarBuf, _, err := s.buildDataTar(ctx, req.SessionID)
 	if err != nil {
 		return fmt.Errorf("build data tar: %w", err)
+	}
+
+	// Consumed here, once nothing else can refuse the generation: one use, then gone with its container.
+	requiredFiles, err := s.requiredFiles.take(req.RequiredFileIDs, time.Now())
+	if err != nil {
+		return err
 	}
 
 	now := time.Now().UTC()
@@ -232,11 +246,11 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 		}
 	}
 
-	go s.runGeneration(req, tarBuf)
+	go s.runGeneration(req, tarBuf, requiredFiles)
 	return nil
 }
 
-func (s *Service) runGeneration(req GenerateRequest, tarData *bytes.Buffer) {
+func (s *Service) runGeneration(req GenerateRequest, tarData *bytes.Buffer, requiredFiles []RequiredFile) {
 	sessionID := req.SessionID
 	ctx := context.Background()
 	deadline := time.Now().UTC().Add(s.cfg.GenerationTimeout)
@@ -249,6 +263,7 @@ func (s *Service) runGeneration(req GenerateRequest, tarData *bytes.Buffer) {
 		PlandoOptions: req.PlandoOptions,
 		Race:          req.Race,
 		Spoiler:       req.Spoiler,
+		RequiredFiles: dockerRequiredFiles(requiredFiles),
 	}, tarData)
 	// Store jobID now that we have it (container may already be removed, but useful for audit)
 	if jobID != "" {

@@ -900,6 +900,96 @@ const docTemplate = `{
                 }
             }
         },
+        "/required-files": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Story 44.2: a ROM the launcher provides. Held in memory only, for 30 minutes, until the\ngeneration that names its id consumes it; copied into that generation container only, never\nstored. Send the setting field before the file.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "required-files"
+                ],
+                "summary": "Hold a file a world reads at generation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "host.yaml setting the failure named, e.g. DK3Settings.rom_file",
+                        "name": "setting",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "The file (64 MiB max)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.StagedRequiredFileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Too many files held",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/required-files/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Story 44.2: the launch it was held for was abandoned. Idempotent.",
+                "tags": [
+                    "required-files"
+                ],
+                "summary": "Drop a held file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Staged file id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
         "/runtime": {
             "get": {
                 "security": [
@@ -1127,6 +1217,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Already in progress",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "required_file_expired: a staged file is unknown or expired, send it again",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1795,6 +1891,13 @@ const docTemplate = `{
                 "race": {
                     "type": "boolean"
                 },
+                "requiredFileIds": {
+                    "description": "Files a world reads at generation (story 44.2): ids from POST /required-files, consumed here.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "seed": {
                     "type": "string"
                 },
@@ -2023,6 +2126,17 @@ const docTemplate = `{
                     "description": "pending | passed | failed",
                     "type": "string",
                     "example": "pending"
+                }
+            }
+        },
+        "api.StagedRequiredFileResponse": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "type": "string"
+                },
+                "stagedFileId": {
+                    "type": "string"
                 }
             }
         },

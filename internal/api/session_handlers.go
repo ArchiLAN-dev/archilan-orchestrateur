@@ -101,6 +101,10 @@ func writeSessionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid release/collect mode")
 	case errors.Is(err, service.ErrInvalidGenerationOption):
 		writeError(w, http.StatusBadRequest, "invalid generation option")
+	case errors.Is(err, service.ErrRequiredFileExpired):
+		writeJSON(w, http.StatusUnprocessableEntity, ErrorResponse{Error: "required_file_expired"})
+	case errors.Is(err, service.ErrTooManyRequiredFiles):
+		writeError(w, http.StatusBadRequest, "too many required files")
 	case errors.Is(err, service.ErrStorageNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "storage not configured")
 	default:
@@ -121,6 +125,7 @@ func writeSessionError(w http.ResponseWriter, err error) {
 // @Success     202
 // @Failure     400 {object} ErrorResponse
 // @Failure     409 {object} ErrorResponse "Already in progress"
+// @Failure     422 {object} ErrorResponse "required_file_expired: a staged file is unknown or expired, send it again"
 // @Failure     503 {object} ErrorResponse "Storage not configured"
 // @Security    BearerAuth
 // @Router      /sessions/{sessionId}/generate [post]
@@ -144,6 +149,8 @@ func handleGenerateSession(svc *service.Service) http.HandlerFunc {
 			PlandoOptions: req.PlandoOptions,
 			Race:          req.Race,
 			Spoiler:       req.Spoiler,
+			// Story 44.2: the staged files this generation consumes.
+			RequiredFileIDs: req.RequiredFileIDs,
 		})
 		if err != nil {
 			writeSessionError(w, err)

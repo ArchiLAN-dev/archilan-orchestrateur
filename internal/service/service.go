@@ -47,6 +47,9 @@ type Service struct {
 	preflightSem    chan struct{}
 	slotPreflightMu sync.Mutex
 	slotPreflights  map[string]*SlotPreflight
+
+	// requiredFiles holds the files a generation reads (story 44.2), in memory only.
+	requiredFiles *requiredFileStore
 }
 
 func New(
@@ -76,6 +79,7 @@ func New(
 
 		preflightSem:   make(chan struct{}, maxConcurrent),
 		slotPreflights: map[string]*SlotPreflight{},
+		requiredFiles:  newRequiredFileStore(cfg.RequiredFilesMaxBytes),
 	}
 }
 
@@ -313,6 +317,7 @@ func (s *Service) GetApworldTemplate(ctx context.Context, hash string) ([]byte, 
 
 type containerStopper interface {
 	Stop(ctx context.Context, containerID string) error
+	Remove(ctx context.Context, containerID string) error
 }
 
 // RecoverFromDB restores the port pool from persisted container and session records.
@@ -371,6 +376,8 @@ func (s *Service) crashInterruptedSessions(ctx context.Context) error {
 			_ = s.containers.Stop(ctx, fmt.Sprintf("ap-server-%s", sess.SessionID))
 			interrupted = append(interrupted, sess)
 		case "generating":
+			// Its generation container may still hold the file the launcher provided (story 44.2).
+			_ = s.containers.Remove(ctx, fmt.Sprintf("archilan-gen-%s", sess.SessionID))
 			interrupted = append(interrupted, sess)
 		}
 	}
