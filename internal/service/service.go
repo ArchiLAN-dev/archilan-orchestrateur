@@ -50,6 +50,10 @@ type Service struct {
 
 	// requiredFiles holds the files a generation reads (story 44.2), in memory only.
 	requiredFiles *requiredFileStore
+
+	// The files the image's own worlds declare, listed once per image (story 44.3).
+	declaredLister declaredFilesLister
+	officialFiles  officialDeclaredFiles
 }
 
 func New(
@@ -80,6 +84,7 @@ func New(
 		preflightSem:   make(chan struct{}, maxConcurrent),
 		slotPreflights: map[string]*SlotPreflight{},
 		requiredFiles:  newRequiredFileStore(cfg.RequiredFilesMaxBytes),
+		declaredLister: dockerClient,
 	}
 }
 

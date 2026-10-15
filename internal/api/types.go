@@ -146,6 +146,17 @@ type ApworldLocationsResponse struct {
 	Locations []string `json:"locations"`
 }
 
+// DeclaredFilesResponse is returned by GET /apworlds/{hash}/required-files (story 44.3).
+type DeclaredFilesResponse struct {
+	RequiredFiles []service.DeclaredFile `json:"requiredFiles"`
+}
+
+// OfficialDeclaredFilesResponse is returned by GET /runtime/required-files (story 44.3).
+type OfficialDeclaredFilesResponse struct {
+	Image string                             `json:"image"`
+	Games map[string][]service.DeclaredFile `json:"games"`
+}
+
 // UploadApworldResponse is returned on successful apworld upload.
 type UploadApworldResponse struct {
 	Hash    string           `json:"hash"    example:"0fd8936279e053df96110fcb7898447a9fb8655343b8f26c22108d79a73b4e21"`

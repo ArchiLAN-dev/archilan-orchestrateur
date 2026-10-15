@@ -163,6 +163,13 @@ definitions:
         example: starting
         type: string
     type: object
+  api.DeclaredFilesResponse:
+    properties:
+      requiredFiles:
+        items:
+          $ref: '#/definitions/service.DeclaredFile'
+        type: array
+    type: object
   api.DictSubOption:
     properties:
       values:
@@ -240,6 +247,17 @@ definitions:
         items:
           $ref: '#/definitions/service.SlotName'
         type: array
+    type: object
+  api.OfficialDeclaredFilesResponse:
+    properties:
+      games:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/service.DeclaredFile'
+          type: array
+        type: object
+      image:
+        type: string
     type: object
   api.OverridePreflightRequest:
     properties:
@@ -414,6 +432,22 @@ definitions:
         items:
           $ref: '#/definitions/api.TemplateOption'
         type: array
+    type: object
+  service.DeclaredFile:
+    properties:
+      description:
+        type: string
+      extension:
+        type: string
+      file:
+        type: string
+      md5s:
+        items:
+          type: string
+        type: array
+      setting:
+        description: Group.key, e.g. DK3Settings.rom_file
+        type: string
     type: object
   service.SlotName:
     properties:
@@ -640,6 +674,29 @@ paths:
       security:
       - BearerAuth: []
       summary: Force-allow (or re-block) a failed apworld preflight
+      tags:
+      - apworlds
+  /apworlds/{hash}/required-files:
+    get:
+      description: |-
+        Story 44.3: the host.yaml files (a ROM...) the apworld's world declares, read at introspection.
+        A superset of what a generation needs. Empty until the apworld is (re)introspected.
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.DeclaredFilesResponse'
+      security:
+      - BearerAuth: []
+      summary: Files an apworld declares
       tags:
       - apworlds
   /apworlds/{hash}/template:
@@ -1089,6 +1146,27 @@ paths:
       security:
       - BearerAuth: []
       summary: Archipelago image in use
+      tags:
+      - system
+  /runtime/required-files:
+    get:
+      description: |-
+        Story 44.3: by game name, the host.yaml files the worlds shipped with the Archipelago image
+        declare (A Link to the Past, Ocarina of Time...). Listed once per image in a throwaway container.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.OfficialDeclaredFilesResponse'
+        "503":
+          description: The image could not list them
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Files the image's own worlds declare
       tags:
       - system
   /sessions/{sessionId}:

@@ -77,6 +77,46 @@ func TestPreflightErrorExcerpt_neverCutsMidRune(t *testing.T) {
 	}
 }
 
+// Story 44.3: the real failure line of DKC3, which names the ROM its world needs. Longer than a capped
+// line, it was cut and its JSON could no longer be read.
+const dkc3FailureLine = `###ARCHILAN-FAILURE### {"type": "FileNotFoundError", "message": "Donkey Kong Country 3 - Dixie Kong's Double Trouble! (USA) (En,Fr).sfc does not exist, but DK3Settings.rom_file is required", "requiredFile": {"setting": "DK3Settings.rom_file", "file": "Donkey Kong Country 3 - Dixie Kong's Double Trouble! (USA) (En,Fr).sfc", "extension": ".sfc", "description": "DKC3 (US) ROM File", "md5s": ["120abf304f0c40fe059f6a192ed4f947"]}}`
+
+func TestPreflightErrorExcerpt_keepsTheFailureLineWhole(t *testing.T) {
+	log := "Traceback (most recent call last):\n" + strings.Repeat("x", 500) + "\nFileNotFoundError: boom\n" + dkc3FailureLine
+
+	got := preflightErrorExcerpt(log, preflightErrorExcerptMax)
+
+	if !strings.HasSuffix(got, "\n"+dkc3FailureLine) {
+		t.Fatalf("the failure line must end the excerpt whole, got %q", got)
+	}
+	if !strings.Contains(got, strings.Repeat("x", preflightErrorLineMax)+"…") {
+		t.Error("ordinary lines are still capped")
+	}
+}
+
+func TestPreflightErrorExcerpt_keepsTheFailureLineBeyondTheTail(t *testing.T) {
+	log := strings.Repeat("line\n", 2000) + dkc3FailureLine
+
+	got := preflightErrorExcerpt(log, 600)
+
+	if !strings.HasSuffix(got, dkc3FailureLine) {
+		t.Fatalf("the failure line must survive the tail cut, got %q", got)
+	}
+	if n := len([]rune(got)); n > 600 {
+		t.Errorf("excerpt is %d runes, want at most 600", n)
+	}
+}
+
+func TestPreflightErrorExcerpt_keepsWarningLinesWhole(t *testing.T) {
+	warning := "###ARCHILAN-WARNING### " + `{"type": "accessibility", "message": "` + strings.Repeat("m", 400) + `"}`
+
+	got := preflightErrorExcerpt("Warning: something\n"+warning, preflightErrorExcerptMax)
+
+	if !strings.HasSuffix(got, warning) {
+		t.Fatalf("the warning line must stay whole, got %q", got)
+	}
+}
+
 func TestPreflightErrorExcerpt_nonPositiveMaxKeepsEverythingButCapsLines(t *testing.T) {
 	got := preflightErrorExcerpt("abc", 0)
 	if got != "abc" {
