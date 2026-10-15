@@ -29,6 +29,9 @@ func (s *Service) sweep(ctx context.Context) {
 	s.sweepTransit(ctx)
 	s.sweepRunning(ctx)
 	s.expirePortReservations(time.Now().UTC())
+	if s.requiredFiles != nil {
+		s.requiredFiles.prune(time.Now())
+	}
 }
 
 func (s *Service) sweepTransit(ctx context.Context) {

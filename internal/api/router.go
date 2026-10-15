@@ -59,6 +59,8 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 
 		r.Post("/sessions/{sessionId}/configure", handleConfigureSession(svc))
 		r.Post("/sessions/{sessionId}/preflight", handlePreflight())
+		r.Post("/required-files", handleStageRequiredFile(svc))
+		r.Delete("/required-files/{id}", handleReleaseRequiredFile(svc))
 		r.Post("/sessions/{sessionId}/generate", handleGenerateSession(svc))
 		r.Post("/sessions/{sessionId}/launch", handleLaunchSession(svc))
 		r.Post("/sessions/{sessionId}/launch-from-file", handleLaunchSessionFromFile(svc))

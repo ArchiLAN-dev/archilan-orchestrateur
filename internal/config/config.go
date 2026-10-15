@@ -55,6 +55,8 @@ type Config struct {
 	// PortReservationTTL: how long a paused or crashed session keeps its port for its relaunch
 	// (story 17.27). Default 14 days; 0 disables reservations (every launch takes a fresh port).
 	PortReservationTTL time.Duration
+	// RequiredFilesMaxBytes caps the files held in memory for their generation (story 44.2).
+	RequiredFilesMaxBytes int64
 }
 
 func Load() *Config {
@@ -112,6 +114,7 @@ func loadFromEnv() *Config {
 		PreflightTimeout:       envDuration("PREFLIGHT_TIMEOUT", 300),
 		PreflightMaxConcurrent: envInt("PREFLIGHT_MAX_CONCURRENT", 2),
 		PortReservationTTL:     envDuration("PORT_RESERVATION_TTL", 14*24*3600),
+		RequiredFilesMaxBytes:  int64(envInt("REQUIRED_FILES_MAX_MB", 512)) << 20,
 	}
 }
 

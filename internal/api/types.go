@@ -182,6 +182,14 @@ type GenerateSessionRequest struct {
 	PlandoOptions []string `json:"plandoOptions,omitempty"` // bosses|items|texts|connections
 	Race          *bool    `json:"race,omitempty"`
 	Spoiler       *int     `json:"spoiler,omitempty"` // 0..3
+	// Files a world reads at generation (story 44.2): ids from POST /required-files, consumed here.
+	RequiredFileIDs []string `json:"requiredFileIds,omitempty"`
+}
+
+// StagedRequiredFileResponse is returned by POST /required-files (story 44.2).
+type StagedRequiredFileResponse struct {
+	StagedFileID string `json:"stagedFileId"`
+	ExpiresAt    string `json:"expiresAt"`
 }
 
 // LaunchSessionRequest is the body for POST /sessions/{sessionId}/launch and /launch-from-file.

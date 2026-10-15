@@ -710,12 +710,23 @@ type GenerateOptions struct {
 	PlandoOptions []string // --plando (comma-joined); subset of bosses/items/texts/connections
 	Race          *bool    // --race (presence-only)
 	Spoiler       *int     // --spoiler N (0..3)
+	// RequiredFiles: the files the launcher provided for this generation only (story 44.2).
+	RequiredFiles []RequiredFile
 }
 
-// GenerateMultiworld runs a one-shot container to generate the multiworld.
-// It uploads tarData into the container at /data, runs generate_multiworld.py,
-// and returns the output filename (from stdout) and the container ID.
-func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string, opts GenerateOptions, tarData io.Reader) (outputFile string, jobID string, err error) {
+// RequiredFile is a file a world reads at generation (a ROM), pointed at by its host.yaml setting.
+type RequiredFile struct {
+	Setting  string // Group.key, e.g. DK3Settings.rom_file
+	Filename string // already sanitized
+	Data     []byte
+}
+
+// requiredFilesDir is where the provided files land: the container's own writable layer, gone when the
+// container is removed. Never under /data, the session volume the AP server reuses for weeks.
+const requiredFilesDir = "/tmp/required-files"
+
+// generateCommand is the generate_multiworld.py invocation for a session generation.
+func generateCommand(seed string, opts GenerateOptions) []string {
 	cmd := []string{
 		"python3", "/usr/local/bin/generate_multiworld.py",
 		"--player_files_path", "/data/yamls",
@@ -737,6 +748,48 @@ func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string,
 	if len(opts.PlandoOptions) > 0 {
 		cmd = append(cmd, "--plando", strings.Join(opts.PlandoOptions, ", "))
 	}
+	for i, f := range opts.RequiredFiles {
+		cmd = append(cmd, "--required_file", fmt.Sprintf("%s=%s", f.Setting, requiredFilePath(i, f)))
+	}
+	return cmd
+}
+
+// requiredFilePath gives each file its own directory: two files may share a name.
+func requiredFilePath(i int, f RequiredFile) string {
+	return fmt.Sprintf("%s/%d/%s", requiredFilesDir, i, f.Filename)
+}
+
+// requiredFilesTar is the archive extracted at /tmp: required-files/<i>/<name>.
+func requiredFilesTar(files []RequiredFile) (*bytes.Buffer, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	base := strings.TrimPrefix(requiredFilesDir, "/tmp/")
+	if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: base + "/", Mode: 0755}); err != nil {
+		return nil, err
+	}
+	for i, f := range files {
+		dir := fmt.Sprintf("%s/%d/", base, i)
+		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: dir, Mode: 0755}); err != nil {
+			return nil, err
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: dir + f.Filename, Mode: 0644, Size: int64(len(f.Data))}); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write(f.Data); err != nil {
+			return nil, err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return &buf, nil
+}
+
+// GenerateMultiworld runs a one-shot container to generate the multiworld.
+// It uploads tarData into the container at /data, runs generate_multiworld.py,
+// and returns the output filename (from stdout) and the container ID.
+func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string, opts GenerateOptions, tarData io.Reader) (outputFile string, jobID string, err error) {
+	cmd := generateCommand(seed, opts)
 
 	body := createSessionBody{
 		Image: c.cfg.APImage,
@@ -771,6 +824,15 @@ func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string,
 
 	if err := c.putArchiveTo(ctx, containerID, "/data", tarData); err != nil {
 		return "", containerID, fmt.Errorf("generate multiworld put archive: %w", err)
+	}
+	if len(opts.RequiredFiles) > 0 {
+		filesTar, err := requiredFilesTar(opts.RequiredFiles)
+		if err != nil {
+			return "", containerID, fmt.Errorf("generate multiworld required files: %w", err)
+		}
+		if err := c.putArchiveTo(ctx, containerID, "/tmp", filesTar); err != nil {
+			return "", containerID, fmt.Errorf("generate multiworld put required files: %w", err)
+		}
 	}
 
 	if err := c.startContainer(ctx, containerID); err != nil {

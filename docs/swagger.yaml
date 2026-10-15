@@ -188,6 +188,12 @@ definitions:
         type: array
       race:
         type: boolean
+      requiredFileIds:
+        description: 'Files a world reads at generation (story 44.2): ids from POST
+          /required-files, consumed here.'
+        items:
+          type: string
+        type: array
       seed:
         type: string
       spoiler:
@@ -343,6 +349,13 @@ definitions:
       status:
         description: pending | passed | failed
         example: pending
+        type: string
+    type: object
+  api.StagedRequiredFileResponse:
+    properties:
+      expiresAt:
+        type: string
+      stagedFileId:
         type: string
     type: object
   api.StartSlotPreflightRequest:
@@ -996,6 +1009,66 @@ paths:
       summary: Get the state of a slot preflight generation
       tags:
       - preflight
+  /required-files:
+    post:
+      consumes:
+      - multipart/form-data
+      description: |-
+        Story 44.2: a ROM the launcher provides. Held in memory only, for 30 minutes, until the
+        generation that names its id consumes it; copied into that generation container only, never
+        stored. Send the setting field before the file.
+      parameters:
+      - description: host.yaml setting the failure named, e.g. DK3Settings.rom_file
+        in: formData
+        name: setting
+        required: true
+        type: string
+      - description: The file (64 MiB max)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.StagedRequiredFileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: Too many files held
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Hold a file a world reads at generation
+      tags:
+      - required-files
+  /required-files/{id}:
+    delete:
+      description: 'Story 44.2: the launch it was held for was abandoned. Idempotent.'
+      parameters:
+      - description: Staged file id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - BearerAuth: []
+      summary: Drop a held file
+      tags:
+      - required-files
   /runtime:
     get:
       description: |-
@@ -1147,6 +1220,11 @@ paths:
             $ref: '#/definitions/api.ErrorResponse'
         "409":
           description: Already in progress
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "422":
+          description: 'required_file_expired: a staged file is unknown or expired,
+            send it again'
           schema:
             $ref: '#/definitions/api.ErrorResponse'
         "503":
