@@ -115,3 +115,26 @@ func TestTheListedVerdictSaysItRanWithAFile(t *testing.T) {
 		t.Errorf("expected withRequiredFiles, got %+v", got)
 	}
 }
+
+// The API's client sends "[]" for a body it has nothing to put in: the re-check must not turn that into a 400.
+func TestRunApworldPreflight_anEmptyArrayBodyMeansNoFiles(t *testing.T) {
+	svc := &fakePreflights{}
+	rec := httptest.NewRecorder()
+
+	handleRunApworldPreflight(svc)(rec, preflightRequest("[]"))
+
+	if rec.Code != http.StatusAccepted || !svc.started || len(svc.ids) != 0 {
+		t.Fatalf("status = %d, started = %v, ids = %v", rec.Code, svc.started, svc.ids)
+	}
+}
+
+func TestRunApworldPreflight_aMalformedBodyIsABadRequest(t *testing.T) {
+	svc := &fakePreflights{}
+	rec := httptest.NewRecorder()
+
+	handleRunApworldPreflight(svc)(rec, preflightRequest(`{"requiredFileIds":`))
+
+	if rec.Code != http.StatusBadRequest || svc.started {
+		t.Fatalf("status = %d, started = %v", rec.Code, svc.started)
+	}
+}

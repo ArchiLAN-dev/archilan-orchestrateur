@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -213,6 +214,21 @@ func apiPreflight(p *storage.ApworldPreflight) *ApworldPreflight {
 	}
 }
 
+// decodeRunApworldPreflightRequest reads the optional body of a re-check. No body, and the "[]" the API's
+// client sends when it has nothing to say, both mean "no files": callers older than story 44.6 keep working.
+func decodeRunApworldPreflightRequest(r *http.Request) (RunApworldPreflightRequest, bool) {
+	var req RunApworldPreflightRequest
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return req, false
+	}
+	switch strings.TrimSpace(string(raw)) {
+	case "", "[]", "null", "{}":
+		return req, true
+	}
+	return req, json.Unmarshal(raw, &req) == nil
+}
+
 // apworldPreflightRunner starts the re-check of an apworld (story 9.38), with the files an admin
 // provided (story 44.6).
 type apworldPreflightRunner interface {
@@ -258,8 +274,8 @@ func writeRequiredFileError(w http.ResponseWriter, err error) bool {
 func handleRunApworldPreflight(svc apworldPreflightRunner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
-		var req RunApworldPreflightRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		req, ok := decodeRunApworldPreflightRequest(r)
+		if !ok {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
