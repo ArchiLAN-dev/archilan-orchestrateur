@@ -105,6 +105,8 @@ func writeSessionError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, ErrorResponse{Error: "required_file_expired"})
 	case errors.Is(err, service.ErrTooManyRequiredFiles):
 		writeError(w, http.StatusBadRequest, "too many required files")
+	case errors.Is(err, service.ErrDuplicateRequiredFile):
+		writeError(w, http.StatusBadRequest, "the same required file named twice")
 	case errors.Is(err, service.ErrStorageNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "storage not configured")
 	default:

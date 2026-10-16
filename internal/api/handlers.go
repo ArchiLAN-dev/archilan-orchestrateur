@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -207,23 +209,85 @@ func apiPreflight(p *storage.ApworldPreflight) *ApworldPreflight {
 		Overridden: p.Overridden,
 		Image:      p.Image,
 		ImageID:    p.ImageID,
+
+		WithRequiredFiles: p.WithRequiredFiles,
 	}
 }
+
+// decodeRunApworldPreflightRequest reads the optional body of a re-check. No body, and the "[]" the API's
+// client sends when it has nothing to say, both mean "no files": callers older than story 44.6 keep working.
+func decodeRunApworldPreflightRequest(r *http.Request) (RunApworldPreflightRequest, bool) {
+	var req RunApworldPreflightRequest
+	raw, err := io.ReadAll(io.LimitReader(r.Body, preflightBodyMaxBytes+1))
+	if len(raw) > preflightBodyMaxBytes {
+		return req, false
+	}
+	if err != nil {
+		return req, false
+	}
+	switch strings.TrimSpace(string(raw)) {
+	case "", "[]", "null", "{}":
+		return req, true
+	}
+	return req, json.Unmarshal(raw, &req) == nil
+}
+
+// apworldPreflightRunner starts the re-check of an apworld (story 9.38), with the files an admin
+// provided (story 44.6).
+type apworldPreflightRunner interface {
+	GetApworldMetaByHash(ctx context.Context, hash string) (storage.ApworldMeta, error)
+	StartApworldPreflight(hash string, requiredFileIDs []string) error
+}
+
+// slotPreflightStarter queues a solo test generation of one YAML (story 9.42).
+type slotPreflightStarter interface {
+	StartSlotPreflight(playerYaml []byte, apworldHash string, requiredFileIDs []string) (string, error)
+}
+
+// writeRequiredFileError answers a test refused over its files (story 44.6) like a generation would; ok is
+// false when the error is something else.
+func writeRequiredFileError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, service.ErrRequiredFileExpired):
+		writeJSON(w, http.StatusUnprocessableEntity, ErrorResponse{Error: "required_file_expired"})
+	case errors.Is(err, service.ErrTooManyRequiredFiles):
+		writeError(w, http.StatusBadRequest, "too many required files")
+	case errors.Is(err, service.ErrDuplicateRequiredFile):
+		writeError(w, http.StatusBadRequest, "the same required file named twice")
+	default:
+		return false
+	}
+	return true
+}
+
+// preflightBodyMaxBytes bounds the JSON bodies of the test routes: a few ids, or a player YAML (the API caps those at
+// 100 KB).
+const preflightBodyMaxBytes = 1 << 20
 
 // handleRunApworldPreflight godoc
 // @Summary     Re-run the apworld preflight test generation
 // @Description Marks the verdict pending and re-runs the solo test generation asynchronously (story 9.38).
+// @Description The optional body names staged files the test reads (story 44.6).
 // @Tags        apworlds
 // @Param       hash path string true "Apworld SHA-256 hash"
+// @Param       body body RunApworldPreflightRequest false "Staged files the test reads"
+// @Accept      json
 // @Produce     json
 // @Success     202 {object} ApworldPreflightResponse
+// @Failure     400 {object} ErrorResponse
 // @Failure     404 {object} ErrorResponse
+// @Failure     422 {object} ErrorResponse "required_file_expired: a staged file is unknown or expired, send it again"
 // @Failure     503 {object} ErrorResponse
 // @Security    BearerAuth
 // @Router      /apworlds/{hash}/preflight [post]
-func handleRunApworldPreflight(svc *service.Service) http.HandlerFunc {
+func handleRunApworldPreflight(svc apworldPreflightRunner) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
+		req, ok := decodeRunApworldPreflightRequest(r)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
 		meta, err := svc.GetApworldMetaByHash(r.Context(), hash)
 		if errors.Is(err, service.ErrStorageNotConfigured) {
 			writeError(w, http.StatusServiceUnavailable, "storage not configured")
@@ -234,7 +298,12 @@ func handleRunApworldPreflight(svc *service.Service) http.HandlerFunc {
 			return
 		}
 
-		svc.StartApworldPreflight(hash)
+		if err := svc.StartApworldPreflight(hash, req.RequiredFileIDs); err != nil {
+			if !writeRequiredFileError(w, err) {
+				writeError(w, http.StatusServiceUnavailable, err.Error())
+			}
+			return
+		}
 
 		pending := &ApworldPreflight{Status: service.PreflightStatusPending}
 		if meta.Preflight != nil {
@@ -395,13 +464,14 @@ func handleReintrospectApworldOptions(svc *service.Service) http.HandlerFunc {
 // @Produce     json
 // @Success     202 {object} SlotPreflightResponse
 // @Failure     400 {object} ErrorResponse
+// @Failure     422 {object} ErrorResponse "required_file_expired: a staged file is unknown or expired, send it again"
 // @Failure     503 {object} ErrorResponse
 // @Security    BearerAuth
 // @Router      /preflight-generations [post]
-func handleStartSlotPreflight(svc *service.Service) http.HandlerFunc {
+func handleStartSlotPreflight(svc slotPreflightStarter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req StartSlotPreflightRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, preflightBodyMaxBytes)).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
@@ -410,7 +480,10 @@ func handleStartSlotPreflight(svc *service.Service) http.HandlerFunc {
 			return
 		}
 
-		id, err := svc.StartSlotPreflight([]byte(req.PlayerYaml), req.ApworldHash)
+		id, err := svc.StartSlotPreflight([]byte(req.PlayerYaml), req.ApworldHash, req.RequiredFileIDs)
+		if err != nil && writeRequiredFileError(w, err) {
+			return
+		}
 		if errors.Is(err, service.ErrStorageNotConfigured) {
 			writeError(w, http.StatusServiceUnavailable, "storage not configured")
 			return

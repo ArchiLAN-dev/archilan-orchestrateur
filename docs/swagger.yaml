@@ -63,6 +63,10 @@ definitions:
         description: Warning is what the generator reported on a pass (story 38.12),
           e.g. an accessibility check not met.
         type: string
+      withRequiredFiles:
+        description: 'WithRequiredFiles: the test generation was given the file its
+          world reads (story 44.6).'
+        type: boolean
     type: object
   api.ApworldPreflightResponse:
     properties:
@@ -308,6 +312,15 @@ definitions:
       slotId:
         type: string
     type: object
+  api.RunApworldPreflightRequest:
+    properties:
+      requiredFileIds:
+        description: 'RequiredFileIDs: files staged with POST /required-files that
+          this test reads (a ROM), one use each.'
+        items:
+          type: string
+        type: array
+    type: object
   api.RuntimeResponse:
     properties:
       apImage:
@@ -382,6 +395,12 @@ definitions:
         type: string
       playerYaml:
         type: string
+      requiredFileIds:
+        description: 'RequiredFileIDs: files staged with POST /required-files that
+          this test reads (story 44.6).'
+        items:
+          type: string
+        type: array
     type: object
   api.TemplateOption:
     properties:
@@ -606,14 +625,22 @@ paths:
       - apworlds
   /apworlds/{hash}/preflight:
     post:
-      description: Marks the verdict pending and re-runs the solo test generation
-        asynchronously (story 9.38).
+      consumes:
+      - application/json
+      description: |-
+        Marks the verdict pending and re-runs the solo test generation asynchronously (story 9.38).
+        The optional body names staged files the test reads (story 44.6).
       parameters:
       - description: Apworld SHA-256 hash
         in: path
         name: hash
         required: true
         type: string
+      - description: Staged files the test reads
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/api.RunApworldPreflightRequest'
       produces:
       - application/json
       responses:
@@ -621,8 +648,17 @@ paths:
           description: Accepted
           schema:
             $ref: '#/definitions/api.ApworldPreflightResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "422":
+          description: 'required_file_expired: a staged file is unknown or expired,
+            send it again'
           schema:
             $ref: '#/definitions/api.ErrorResponse'
         "503":
@@ -1029,6 +1065,11 @@ paths:
             $ref: '#/definitions/api.SlotPreflightResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "422":
+          description: 'required_file_expired: a staged file is unknown or expired,
+            send it again'
           schema:
             $ref: '#/definitions/api.ErrorResponse'
         "503":

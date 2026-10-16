@@ -47,6 +47,8 @@ type Service struct {
 	preflightSem    chan struct{}
 	slotPreflightMu sync.Mutex
 	slotPreflights  map[string]*SlotPreflight
+	// preflightMetaMu serialises the read-modify-writes of an apworld's verdict (review of story 44.6).
+	preflightMetaMu sync.Mutex
 
 	// requiredFiles holds the files a generation reads (story 44.2), in memory only.
 	requiredFiles *requiredFileStore
@@ -159,7 +161,7 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, 
 
 	// Solo test generation in background (story 9.38); failure is non-fatal for the upload.
 	go func() {
-		if _, pfErr := s.RunApworldPreflight(context.Background(), hash); pfErr != nil {
+		if _, pfErr := s.RunApworldPreflight(context.Background(), hash, nil, ""); pfErr != nil {
 			s.log.Warn("apworld preflight did not complete", "hash", hash, "err", pfErr)
 		}
 	}()

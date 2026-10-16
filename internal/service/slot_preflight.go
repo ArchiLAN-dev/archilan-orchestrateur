@@ -31,16 +31,24 @@ type SlotPreflight struct {
 // StartSlotPreflight queues a solo test generation for the given player YAML (story 9.42).
 // apworldHash is empty for official worlds bundled in the generation image. Returns the job
 // id to poll with GetSlotPreflight.
-func (s *Service) StartSlotPreflight(playerYaml []byte, apworldHash string) (string, error) {
+//
+// requiredFileIDs name staged files the test reads (story 44.6), taken here: an unknown or expired one
+// refuses the test with ErrRequiredFileExpired before any job exists.
+func (s *Service) StartSlotPreflight(playerYaml []byte, apworldHash string, requiredFileIDs []string) (string, error) {
 	if len(playerYaml) == 0 {
 		return "", fmt.Errorf("empty player yaml")
 	}
 	if apworldHash != "" && s.storage == nil {
 		return "", ErrStorageNotConfigured
 	}
+	requiredFiles, done, err := s.takeRequiredFiles(requiredFileIDs)
+	if err != nil {
+		return "", err
+	}
 
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
+		done()
 		return "", fmt.Errorf("generate job id: %w", err)
 	}
 	id := hex.EncodeToString(buf)
@@ -51,7 +59,10 @@ func (s *Service) StartSlotPreflight(playerYaml []byte, apworldHash string) (str
 	s.slotPreflights[id] = &SlotPreflight{Status: SlotPreflightPending, CreatedAt: now}
 	s.slotPreflightMu.Unlock()
 
-	go s.runSlotPreflight(id, playerYaml, apworldHash)
+	go func() {
+		defer done()
+		s.runSlotPreflight(id, playerYaml, apworldHash, requiredFiles)
+	}()
 
 	return id, nil
 }
@@ -67,7 +78,7 @@ func (s *Service) GetSlotPreflight(id string) (SlotPreflight, bool) {
 	return *job, true
 }
 
-func (s *Service) runSlotPreflight(id string, playerYaml []byte, apworldHash string) {
+func (s *Service) runSlotPreflight(id string, playerYaml []byte, apworldHash string, requiredFiles []RequiredFile) {
 	// Preflight containers share one concurrency budget (AC6) with the upload check.
 	s.preflightSem <- struct{}{}
 	defer func() { <-s.preflightSem }()
@@ -85,7 +96,7 @@ func (s *Service) runSlotPreflight(id string, playerYaml []byte, apworldHash str
 		apworldData = data
 	}
 
-	if _, _, err := s.docker.PreflightGenerate(ctx, apworldData, apworldHash, playerYaml); err != nil {
+	if _, _, err := s.docker.PreflightGenerate(ctx, apworldData, apworldHash, playerYaml, dockerRequiredFiles(requiredFiles)); err != nil {
 		msg := err.Error()
 		if ctx.Err() != nil {
 			msg = fmt.Sprintf("preflight timed out after %s: %s", s.cfg.PreflightTimeout, msg)

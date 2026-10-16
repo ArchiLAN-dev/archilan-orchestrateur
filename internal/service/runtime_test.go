@@ -121,7 +121,7 @@ func TestAPassedVerdictCarriesItsWarningUntilTheNextOne(t *testing.T) {
 
 // A verdict being recomputed is unknown: it must not keep claiming the image of the previous run.
 func TestAPendingVerdictForgetsThePreviousImage(t *testing.T) {
-	p := storage.ApworldPreflight{Status: PreflightStatusPassed, Error: "old", Warning: "old warning", Overridden: true, Image: "archipelago:0.16.0", ImageID: "sha256:old"}
+	p := storage.ApworldPreflight{Status: PreflightStatusPassed, Error: "old", Warning: "old warning", Overridden: true, Image: "archipelago:0.16.0", ImageID: "sha256:old", WithRequiredFiles: true}
 
 	markPending(&p)
 
@@ -136,5 +136,51 @@ func TestRuntimeWithoutAnInspectorKeepsTheReference(t *testing.T) {
 
 	if got != (RuntimeInfo{APImage: "ghcr.io/archilan-dev/archipelago:0.16.1"}) {
 		t.Errorf("expected the reference alone, got %+v", got)
+	}
+}
+
+// Story 44.6: a verdict says whether the test generation was given the file the world reads, so the
+// rolling test knows it cannot reproduce it. A skipped verdict ran nothing, with or without a file.
+func TestAVerdictRemembersItRanWithTheProvidedFiles(t *testing.T) {
+	p := storage.ApworldPreflight{}
+
+	recordProvidedFiles(&p, PreflightStatusPassed, true)
+	if !p.WithRequiredFiles {
+		t.Fatalf("a test given its file should say so, got %+v", p)
+	}
+
+	recordProvidedFiles(&p, PreflightStatusFailed, false)
+	if p.WithRequiredFiles {
+		t.Errorf("a test without a file should not keep the previous flag, got %+v", p)
+	}
+
+	recordProvidedFiles(&p, PreflightStatusSkipped, true)
+	if p.WithRequiredFiles {
+		t.Errorf("a skipped verdict ran nothing, got %+v", p)
+	}
+}
+
+// Review of story 44.6: the last run started owns the verdict. A run that finishes after a newer one was
+// started - the rolling test behind the admin's run with the ROM - must not overwrite it.
+func TestOnlyTheLastRunStartedWritesTheVerdict(t *testing.T) {
+	p := storage.ApworldPreflight{Status: PreflightStatusPassed}
+
+	openRun("run-a", false)(&p)
+	openRun("run-b", true)(&p)
+
+	if ownsRun(&p, "run-a") {
+		t.Error("an older run must not own the verdict")
+	}
+	if !ownsRun(&p, "run-b") || !p.PendingWithFiles || p.Status != PreflightStatusPending {
+		t.Errorf("the newest run owns a pending verdict with its files, got %+v", p)
+	}
+}
+
+func TestAVerdictWithoutARunIsOwnedByARunWithoutId(t *testing.T) {
+	// The upload hook runs without marking pending: a fresh apworld has no run id, nor does its run.
+	p := storage.ApworldPreflight{}
+
+	if !ownsRun(&p, "") {
+		t.Error("the upload-time run must be able to write the first verdict")
 	}
 }

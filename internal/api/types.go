@@ -85,6 +85,14 @@ type ApworldPreflight struct {
 	// absent on a verdict older than that story.
 	Image   string `json:"image,omitempty" example:"ghcr.io/archilan-dev/archipelago:0.16.1"`
 	ImageID string `json:"imageId,omitempty" example:"sha256:4b1c2d"`
+	// WithRequiredFiles: the test generation was given the file its world reads (story 44.6).
+	WithRequiredFiles bool `json:"withRequiredFiles,omitempty"`
+}
+
+// RunApworldPreflightRequest is the optional body of POST /apworlds/{hash}/preflight (story 44.6).
+type RunApworldPreflightRequest struct {
+	// RequiredFileIDs: files staged with POST /required-files that this test reads (a ROM), one use each.
+	RequiredFileIDs []string `json:"requiredFileIds,omitempty"`
 }
 
 // ApworldEntry represents a single uploaded apworld with its game metadata.
@@ -125,6 +133,8 @@ type ApworldTemplateResponse struct {
 type StartSlotPreflightRequest struct {
 	PlayerYaml  string `json:"playerYaml"`
 	ApworldHash string `json:"apworldHash,omitempty"`
+	// RequiredFileIDs: files staged with POST /required-files that this test reads (story 44.6).
+	RequiredFileIDs []string `json:"requiredFileIds,omitempty"`
 }
 
 // SlotPreflightResponse is returned by the slot preflight endpoints (story 9.42).

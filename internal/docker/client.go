@@ -629,13 +629,16 @@ func (c *Client) GenerateTemplate(ctx context.Context, apworldData []byte, hash 
 // Returns nil when the generation succeeds; on failure the error carries the stderr tail,
 // which ends with the Python traceback.
 //
+// requiredFiles are the files the admin provided for this test only (story 44.6): copied to the
+// container's /tmp like a session generation's, gone with the container.
+//
 // It returns the id of the image the container was created from (story 38.8), even when the
 // generation failed: a verdict names the image that actually ran. An inspection failure leaves it
 // empty and is only logged.
 //
 // A generation that succeeded with warnings (story 38.12: accessibility not met, as the official
 // Launcher allows) returns their text; an unreadable log only costs the warning, never the pass.
-func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte) (string, string, error) {
+func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte, requiredFiles []RequiredFile) (string, string, error) {
 	var tarBuf bytes.Buffer
 	tw := tar.NewWriter(&tarBuf)
 	if len(apworldData) > 0 {
@@ -649,13 +652,7 @@ func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash
 	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
 	_ = tw.Close()
 
-	cmd := []string{
-		"python3", "/usr/local/bin/generate_multiworld.py",
-		"--player_files_path", "/tmp/yamls",
-		"--outputpath", "/tmp/output",
-		"--world_directory", "/tmp/worlds",
-	}
-	containerID, err := c.createOneShot(ctx, c.cfg.APImage, cmd)
+	containerID, err := c.createOneShot(ctx, c.cfg.APImage, preflightCommand(requiredFiles))
 	if err != nil {
 		return "", "", fmt.Errorf("create preflight container: %w", err)
 	}
@@ -668,6 +665,15 @@ func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash
 
 	if err := c.putArchiveTo(ctx, containerID, "/tmp", &tarBuf); err != nil {
 		return imageID, "", fmt.Errorf("copy apworld to preflight container: %w", err)
+	}
+	if len(requiredFiles) > 0 {
+		filesTar, err := requiredFilesTar(requiredFiles)
+		if err != nil {
+			return imageID, "", fmt.Errorf("preflight required files: %w", err)
+		}
+		if err := c.putArchiveTo(ctx, containerID, "/tmp", filesTar); err != nil {
+			return imageID, "", fmt.Errorf("copy required files to preflight container: %w", err)
+		}
 	}
 
 	if err := c.startContainer(ctx, containerID); err != nil {
@@ -776,10 +782,28 @@ func generateCommand(seed string, opts GenerateOptions) []string {
 	if len(opts.PlandoOptions) > 0 {
 		cmd = append(cmd, "--plando", strings.Join(opts.PlandoOptions, ", "))
 	}
-	for i, f := range opts.RequiredFiles {
-		cmd = append(cmd, "--required_file", fmt.Sprintf("%s=%s", f.Setting, requiredFilePath(i, f)))
+	return append(cmd, requiredFileArgs(opts.RequiredFiles)...)
+}
+
+// preflightCommand is the generate_multiworld.py invocation for a test generation (stories 9.38/9.42),
+// everything under the one-shot container's /tmp.
+func preflightCommand(requiredFiles []RequiredFile) []string {
+	cmd := []string{
+		"python3", "/usr/local/bin/generate_multiworld.py",
+		"--player_files_path", "/tmp/yamls",
+		"--outputpath", "/tmp/output",
+		"--world_directory", "/tmp/worlds",
 	}
-	return cmd
+	return append(cmd, requiredFileArgs(requiredFiles)...)
+}
+
+// requiredFileArgs points each provided file's host.yaml setting at where requiredFilesTar puts it.
+func requiredFileArgs(files []RequiredFile) []string {
+	var args []string
+	for i, f := range files {
+		args = append(args, "--required_file", fmt.Sprintf("%s=%s", f.Setting, requiredFilePath(i, f)))
+	}
+	return args
 }
 
 // requiredFilePath gives each file its own directory: two files may share a name.
