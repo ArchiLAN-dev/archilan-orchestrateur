@@ -35,6 +35,7 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 		r.Use(authMiddleware(cfg.APIKey))
 
 		r.Get("/runtime", handleRuntime(svc))
+		r.Get("/runtime/required-files", handleOfficialDeclaredFiles(svc))
 
 		r.Get("/apworlds", handleListApworlds(svc))
 		r.Post("/apworlds", handleUploadApworld(svc))
@@ -48,6 +49,7 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 		r.Get("/preflight-generations/{id}", handleGetSlotPreflight(svc))
 		r.Get("/apworlds/{hash}/options", handleGetApworldOptions(svc))
 		r.Get("/apworlds/{hash}/locations", handleGetApworldLocations(svc))
+		r.Get("/apworlds/{hash}/required-files", handleGetApworldDeclaredFiles(svc))
 
 		r.Get("/containers", handleListContainers(svc))
 		r.Post("/containers", handleCreateContainer(svc))

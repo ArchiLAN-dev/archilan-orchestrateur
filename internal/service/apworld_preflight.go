@@ -33,24 +33,51 @@ const preflightErrorLineMax = 300
 
 // preflightErrorExcerpt caps every line, then returns the last maxLen characters.
 // Rune-based throughout so a cut never produces invalid UTF-8.
+//
+// The machine-readable lines (###ARCHILAN-FAILURE### / ###ARCHILAN-WARNING###) are never cut and always
+// kept, at the end: the API decodes their JSON, and a DKC3 failure line naming its required file is
+// already longer than a capped line (story 44.3). The image bounds them itself.
 func preflightErrorExcerpt(errText string, maxLen int) string {
-	lines := strings.Split(errText, "\n")
-	for i, line := range lines {
+	var plain, sentinels []string
+	for _, line := range strings.Split(errText, "\n") {
+		if isSentinelLine(line) {
+			sentinels = append(sentinels, line)
+			continue
+		}
 		runes := []rune(line)
 		if len(runes) > preflightErrorLineMax {
-			lines[i] = string(runes[:preflightErrorLineMax]) + "…"
+			line = string(runes[:preflightErrorLineMax]) + "…"
+		}
+		plain = append(plain, line)
+	}
+	capped := strings.Join(plain, "\n")
+	tail := strings.Join(sentinels, "\n")
+
+	if maxLen > 0 {
+		budget := maxLen
+		if tail != "" {
+			budget -= len([]rune(tail)) + 1
+		}
+		if budget < 0 {
+			budget = 0
+		}
+		if runes := []rune(capped); len(runes) > budget {
+			capped = string(runes[len(runes)-budget:])
 		}
 	}
-	capped := strings.Join(lines, "\n")
+	switch {
+	case tail == "":
+		return capped
+	case capped == "":
+		return tail
+	default:
+		return capped + "\n" + tail
+	}
+}
 
-	if maxLen <= 0 {
-		return capped
-	}
-	runes := []rune(capped)
-	if len(runes) <= maxLen {
-		return capped
-	}
-	return string(runes[len(runes)-maxLen:])
+func isSentinelLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.HasPrefix(trimmed, "###ARCHILAN-FAILURE###") || strings.HasPrefix(trimmed, "###ARCHILAN-WARNING###")
 }
 
 // RunApworldPreflight executes the solo test generation for an uploaded apworld and

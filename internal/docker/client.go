@@ -489,6 +489,34 @@ func (c *Client) IntrospectOptions(ctx context.Context, apworldData []byte, hash
 	return bytes.TrimSpace(out), nil
 }
 
+// ListRequiredFiles lists, by game name, the files the worlds shipped with the image declare (story 44.3):
+// generate_multiworld.py --list_required_files, in a throwaway container with no network. Raw JSON.
+func (c *Client) ListRequiredFiles(ctx context.Context) ([]byte, error) {
+	cmd := []string{"python3", "/usr/local/bin/generate_multiworld.py", "--list_required_files"}
+	containerID, err := c.createOneShot(ctx, c.cfg.APImage, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("create required files container: %w", err)
+	}
+	defer func() { _ = c.Remove(context.WithoutCancel(ctx), containerID) }()
+
+	if err := c.startContainer(ctx, containerID); err != nil {
+		return nil, fmt.Errorf("start required files container: %w", err)
+	}
+	exitCode, err := c.waitContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("wait for required files container: %w", err)
+	}
+	if exitCode != 0 {
+		stderr, _ := c.containerLogs(ctx, containerID, false, true)
+		return nil, fmt.Errorf("list required files exited %d: %s", exitCode, bytes.TrimSpace(stderr))
+	}
+	out, err := c.containerLogs(ctx, containerID, true, false)
+	if err != nil {
+		return nil, fmt.Errorf("read required files output: %w", err)
+	}
+	return bytes.TrimSpace(out), nil
+}
+
 // ReadMultidata runs a one-shot Archipelago container to read the slot table of an output
 // archive (story 16.18). Returns the raw JSON bytes:
 // {"seedName": "...", "slots": [{"slot": 1, "name": "...", "game": "...", "type": 1}]}.

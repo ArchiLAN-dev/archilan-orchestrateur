@@ -335,6 +335,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/apworlds/{hash}/required-files": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Story 44.3: the host.yaml files (a ROM...) the apworld's world declares, read at introspection.\nA superset of what a generation needs. Empty until the apworld is (re)introspected.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Files an apworld declares",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.DeclaredFilesResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/apworlds/{hash}/template": {
             "post": {
                 "security": [
@@ -1014,6 +1048,37 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtime/required-files": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Story 44.3: by game name, the host.yaml files the worlds shipped with the Archipelago image\ndeclare (A Link to the Past, Ocarina of Time...). Listed once per image in a throwaway container.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Files the image's own worlds declare",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.OfficialDeclaredFilesResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "The image could not list them",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1855,6 +1920,17 @@ const docTemplate = `{
                 }
             }
         },
+        "api.DeclaredFilesResponse": {
+            "type": "object",
+            "properties": {
+                "requiredFiles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.DeclaredFile"
+                    }
+                }
+            }
+        },
         "api.DictSubOption": {
             "type": "object",
             "properties": {
@@ -1959,6 +2035,23 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/service.SlotName"
                     }
+                }
+            }
+        },
+        "api.OfficialDeclaredFilesResponse": {
+            "type": "object",
+            "properties": {
+                "games": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/service.DeclaredFile"
+                        }
+                    }
+                },
+                "image": {
+                    "type": "string"
                 }
             }
         },
@@ -2210,6 +2303,30 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/api.TemplateOption"
                     }
+                }
+            }
+        },
+        "service.DeclaredFile": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "extension": {
+                    "type": "string"
+                },
+                "file": {
+                    "type": "string"
+                },
+                "md5s": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "setting": {
+                    "description": "Group.key, e.g. DK3Settings.rom_file",
+                    "type": "string"
                 }
             }
         },
