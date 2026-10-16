@@ -49,6 +49,9 @@ type ApworldPreflight struct {
 	// a verdict older than that story, or when the image could not be inspected.
 	Image   string `json:"image,omitempty"`
 	ImageID string `json:"imageId,omitempty"`
+	// WithRequiredFiles: the test generation was given the file the world reads, a ROM (story 44.6). Only
+	// an admin can provide it, so the rolling test, which cannot, leaves such a pass alone.
+	WithRequiredFiles bool `json:"withRequiredFiles,omitempty"`
 }
 
 type ApworldMeta struct {

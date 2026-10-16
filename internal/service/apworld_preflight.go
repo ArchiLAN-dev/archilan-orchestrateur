@@ -87,7 +87,9 @@ func isSentinelLine(line string) bool {
 // Failure semantics (AC6): only a completed check writes passed/failed/skipped. An
 // infrastructure error (docker, storage) is returned to the caller and leaves the stored
 // status untouched (pending/previous value) so the verdict never lies.
-func (s *Service) RunApworldPreflight(ctx context.Context, hash string) (storage.ApworldMeta, error) {
+//
+// requiredFiles are the files an admin provided for this run only (story 44.6); the verdict says so.
+func (s *Service) RunApworldPreflight(ctx context.Context, hash string, requiredFiles []RequiredFile) (storage.ApworldMeta, error) {
 	if s.storage == nil {
 		return storage.ApworldMeta{}, ErrStorageNotConfigured
 	}
@@ -103,7 +105,7 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string) (storage
 	}
 	if !found || len(template) == 0 {
 		// No template to generate with: the check cannot run (AC2 "skipped").
-		return s.storeApworldPreflight(ctx, hash, PreflightStatusSkipped, "", "", "")
+		return s.storeApworldPreflight(ctx, hash, PreflightStatusSkipped, "", "", "", false)
 	}
 
 	// Same container-concurrency budget as the slot preflights (story 9.42 AC6).
@@ -113,9 +115,10 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string) (storage
 	genCtx, cancel := context.WithTimeout(ctx, s.cfg.PreflightTimeout)
 	defer cancel()
 
-	imageID, warning, genErr := s.docker.PreflightGenerate(genCtx, data, hash, template)
+	withFiles := len(requiredFiles) > 0
+	imageID, warning, genErr := s.docker.PreflightGenerate(genCtx, data, hash, template, dockerRequiredFiles(requiredFiles))
 	if genErr == nil {
-		return s.storeApworldPreflight(ctx, hash, PreflightStatusPassed, "", preflightErrorExcerpt(warning, preflightErrorExcerptMax), imageID)
+		return s.storeApworldPreflight(ctx, hash, PreflightStatusPassed, "", preflightErrorExcerpt(warning, preflightErrorExcerptMax), imageID, withFiles)
 	}
 
 	// A timeout counts as failure (AC1): a world that cannot generate a solo seed within
@@ -123,25 +126,33 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string) (storage
 	if genCtx.Err() != nil {
 		genErr = fmt.Errorf("preflight timed out after %s: %w", s.cfg.PreflightTimeout, genErr)
 	}
-	return s.storeApworldPreflight(ctx, hash, PreflightStatusFailed, preflightErrorExcerpt(genErr.Error(), preflightErrorExcerptMax), "", imageID)
+	return s.storeApworldPreflight(ctx, hash, PreflightStatusFailed, preflightErrorExcerpt(genErr.Error(), preflightErrorExcerptMax), "", imageID, withFiles)
 }
 
 // StartApworldPreflight marks the verdict pending and runs the check in the background
 // (same fire-and-forget pattern as the option-type introspection at upload). Infrastructure
 // errors are logged and leave the previous verdict in place (AC6).
-func (s *Service) StartApworldPreflight(hash string) {
+//
+// The staged files it is given are taken before anything changes (story 44.6): an unknown or expired
+// one refuses the run with ErrRequiredFileExpired and leaves the verdict as it was.
+func (s *Service) StartApworldPreflight(hash string, requiredFileIDs []string) error {
 	if s.storage == nil {
-		return
+		return ErrStorageNotConfigured
+	}
+	requiredFiles, err := s.takeRequiredFiles(requiredFileIDs)
+	if err != nil {
+		return err
 	}
 	bgCtx := context.Background()
 	if _, err := s.storage.MutateApworldPreflight(bgCtx, hash, markPending); err != nil {
 		s.log.Warn("failed to mark apworld preflight pending", "hash", hash, "err", err)
 	}
 	go func() {
-		if _, err := s.RunApworldPreflight(bgCtx, hash); err != nil {
+		if _, err := s.RunApworldPreflight(bgCtx, hash, requiredFiles); err != nil {
 			s.log.Warn("apworld preflight did not complete", "hash", hash, "err", err)
 		}
 	}()
+	return nil
 }
 
 // GetApworldMetaByHash returns the meta sidecar for one apworld (verdict included).
@@ -164,9 +175,10 @@ func (s *Service) OverrideApworldPreflight(ctx context.Context, hash string, ove
 
 // storeApworldPreflight records a completed verdict, stamped with the image of the container
 // that produced it (story 38.8), not with whatever the tag points to by now.
-func (s *Service) storeApworldPreflight(ctx context.Context, hash, status, errExcerpt, warning, imageID string) (storage.ApworldMeta, error) {
+func (s *Service) storeApworldPreflight(ctx context.Context, hash, status, errExcerpt, warning, imageID string, withFiles bool) (storage.ApworldMeta, error) {
 	rt := verdictImage(status, s.cfg.APImage, imageID)
 	return s.storage.MutateApworldPreflight(ctx, hash, func(p *storage.ApworldPreflight) {
 		applyVerdict(p, status, errExcerpt, warning, time.Now(), rt)
+		recordProvidedFiles(p, status, withFiles)
 	})
 }

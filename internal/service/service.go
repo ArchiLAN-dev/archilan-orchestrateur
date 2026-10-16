@@ -159,7 +159,7 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, 
 
 	// Solo test generation in background (story 9.38); failure is non-fatal for the upload.
 	go func() {
-		if _, pfErr := s.RunApworldPreflight(context.Background(), hash); pfErr != nil {
+		if _, pfErr := s.RunApworldPreflight(context.Background(), hash, nil); pfErr != nil {
 			s.log.Warn("apworld preflight did not complete", "hash", hash, "err", pfErr)
 		}
 	}()

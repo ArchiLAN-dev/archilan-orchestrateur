@@ -184,6 +184,15 @@ func (s *Service) ReleaseRequiredFile(id string) {
 	s.requiredFiles.release(id)
 }
 
+// takeRequiredFiles consumes the staged files a generation or a test reads (stories 44.2, 44.6); no ids
+// takes nothing.
+func (s *Service) takeRequiredFiles(ids []string) ([]RequiredFile, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return s.requiredFiles.take(ids, time.Now())
+}
+
 func dockerRequiredFiles(files []RequiredFile) []docker.RequiredFile {
 	out := make([]docker.RequiredFile, 0, len(files))
 	for _, f := range files {

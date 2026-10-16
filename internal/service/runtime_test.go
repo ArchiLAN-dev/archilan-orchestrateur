@@ -121,7 +121,7 @@ func TestAPassedVerdictCarriesItsWarningUntilTheNextOne(t *testing.T) {
 
 // A verdict being recomputed is unknown: it must not keep claiming the image of the previous run.
 func TestAPendingVerdictForgetsThePreviousImage(t *testing.T) {
-	p := storage.ApworldPreflight{Status: PreflightStatusPassed, Error: "old", Warning: "old warning", Overridden: true, Image: "archipelago:0.16.0", ImageID: "sha256:old"}
+	p := storage.ApworldPreflight{Status: PreflightStatusPassed, Error: "old", Warning: "old warning", Overridden: true, Image: "archipelago:0.16.0", ImageID: "sha256:old", WithRequiredFiles: true}
 
 	markPending(&p)
 
@@ -136,5 +136,26 @@ func TestRuntimeWithoutAnInspectorKeepsTheReference(t *testing.T) {
 
 	if got != (RuntimeInfo{APImage: "ghcr.io/archilan-dev/archipelago:0.16.1"}) {
 		t.Errorf("expected the reference alone, got %+v", got)
+	}
+}
+
+// Story 44.6: a verdict says whether the test generation was given the file the world reads, so the
+// rolling test knows it cannot reproduce it. A skipped verdict ran nothing, with or without a file.
+func TestAVerdictRemembersItRanWithTheProvidedFiles(t *testing.T) {
+	p := storage.ApworldPreflight{}
+
+	recordProvidedFiles(&p, PreflightStatusPassed, true)
+	if !p.WithRequiredFiles {
+		t.Fatalf("a test given its file should say so, got %+v", p)
+	}
+
+	recordProvidedFiles(&p, PreflightStatusFailed, false)
+	if p.WithRequiredFiles {
+		t.Errorf("a test without a file should not keep the previous flag, got %+v", p)
+	}
+
+	recordProvidedFiles(&p, PreflightStatusSkipped, true)
+	if p.WithRequiredFiles {
+		t.Errorf("a skipped verdict ran nothing, got %+v", p)
 	}
 }

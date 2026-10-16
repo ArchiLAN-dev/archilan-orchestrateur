@@ -232,7 +232,10 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Marks the verdict pending and re-runs the solo test generation asynchronously (story 9.38).",
+                "description": "Marks the verdict pending and re-runs the solo test generation asynchronously (story 9.38).\nThe optional body names staged files the test reads (story 44.6).",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -247,6 +250,14 @@ const docTemplate = `{
                         "name": "hash",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Staged files the test reads",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.RunApworldPreflightRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -256,8 +267,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.ApworldPreflightResponse"
                         }
                     },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "required_file_expired: a staged file is unknown or expired, send it again",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -881,6 +904,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "required_file_expired: a staged file is unknown or expired, send it again",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1768,6 +1797,10 @@ const docTemplate = `{
                 "warning": {
                     "description": "Warning is what the generator reported on a pass (story 38.12), e.g. an accessibility check not met.",
                     "type": "string"
+                },
+                "withRequiredFiles": {
+                    "description": "WithRequiredFiles: the test generation was given the file its world reads (story 44.6).",
+                    "type": "boolean"
                 }
             }
         },
@@ -2131,6 +2164,18 @@ const docTemplate = `{
                 }
             }
         },
+        "api.RunApworldPreflightRequest": {
+            "type": "object",
+            "properties": {
+                "requiredFileIds": {
+                    "description": "RequiredFileIDs: files staged with POST /required-files that this test reads (a ROM), one use each.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "api.RuntimeResponse": {
             "type": "object",
             "properties": {
@@ -2241,6 +2286,13 @@ const docTemplate = `{
                 },
                 "playerYaml": {
                     "type": "string"
+                },
+                "requiredFileIds": {
+                    "description": "RequiredFileIDs: files staged with POST /required-files that this test reads (story 44.6).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

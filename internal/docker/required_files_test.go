@@ -69,3 +69,27 @@ func TestRequiredFilesTar_extractsUnderTmpRequiredFiles(t *testing.T) {
 		t.Fatalf("entries = %v, want %v (extracted at /tmp, matching the command's paths)", names, want)
 	}
 }
+
+// Story 44.6: the admin's test generations read the file the same way a session generation does.
+func TestPreflightCommand_pointsEachSettingAtItsFile(t *testing.T) {
+	cmd := preflightCommand([]RequiredFile{{Setting: "DK3Settings.rom_file", Filename: "dkc3.sfc"}})
+
+	want := []string{
+		"python3", "/usr/local/bin/generate_multiworld.py",
+		"--player_files_path", "/tmp/yamls",
+		"--outputpath", "/tmp/output",
+		"--world_directory", "/tmp/worlds",
+		"--required_file", "DK3Settings.rom_file=/tmp/required-files/0/dkc3.sfc",
+	}
+	if !slices.Equal(cmd, want) {
+		t.Fatalf("cmd = %v, want %v", cmd, want)
+	}
+}
+
+func TestPreflightCommand_withoutFilesIsUnchanged(t *testing.T) {
+	cmd := preflightCommand(nil)
+
+	if len(cmd) != 8 || slices.Contains(cmd, "--required_file") {
+		t.Fatalf("cmd = %v, want the plain preflight command", cmd)
+	}
+}

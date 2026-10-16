@@ -69,4 +69,11 @@ func markPending(p *storage.ApworldPreflight) {
 	p.CheckedAt = ""
 	p.Image = ""
 	p.ImageID = ""
+	p.WithRequiredFiles = false
+}
+
+// recordProvidedFiles notes whether a finished test generation was given the file its world reads
+// (story 44.6). A skipped verdict ran nothing.
+func recordProvidedFiles(p *storage.ApworldPreflight, status string, withFiles bool) {
+	p.WithRequiredFiles = withFiles && status != PreflightStatusSkipped
 }
