@@ -218,7 +218,10 @@ func apiPreflight(p *storage.ApworldPreflight) *ApworldPreflight {
 // client sends when it has nothing to say, both mean "no files": callers older than story 44.6 keep working.
 func decodeRunApworldPreflightRequest(r *http.Request) (RunApworldPreflightRequest, bool) {
 	var req RunApworldPreflightRequest
-	raw, err := io.ReadAll(r.Body)
+	raw, err := io.ReadAll(io.LimitReader(r.Body, preflightBodyMaxBytes+1))
+	if len(raw) > preflightBodyMaxBytes {
+		return req, false
+	}
 	if err != nil {
 		return req, false
 	}
@@ -249,11 +252,17 @@ func writeRequiredFileError(w http.ResponseWriter, err error) bool {
 		writeJSON(w, http.StatusUnprocessableEntity, ErrorResponse{Error: "required_file_expired"})
 	case errors.Is(err, service.ErrTooManyRequiredFiles):
 		writeError(w, http.StatusBadRequest, "too many required files")
+	case errors.Is(err, service.ErrDuplicateRequiredFile):
+		writeError(w, http.StatusBadRequest, "the same required file named twice")
 	default:
 		return false
 	}
 	return true
 }
+
+// preflightBodyMaxBytes bounds the JSON bodies of the test routes: a few ids, or a player YAML (the API caps those at
+// 100 KB).
+const preflightBodyMaxBytes = 1 << 20
 
 // handleRunApworldPreflight godoc
 // @Summary     Re-run the apworld preflight test generation
@@ -462,7 +471,7 @@ func handleReintrospectApworldOptions(svc *service.Service) http.HandlerFunc {
 func handleStartSlotPreflight(svc slotPreflightStarter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req StartSlotPreflightRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, preflightBodyMaxBytes)).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}

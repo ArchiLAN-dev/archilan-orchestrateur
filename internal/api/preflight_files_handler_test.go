@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"archilan.fr/orchestrateur/internal/service"
@@ -133,6 +134,28 @@ func TestRunApworldPreflight_aMalformedBodyIsABadRequest(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handleRunApworldPreflight(svc)(rec, preflightRequest(`{"requiredFileIds":`))
+
+	if rec.Code != http.StatusBadRequest || svc.started {
+		t.Fatalf("status = %d, started = %v", rec.Code, svc.started)
+	}
+}
+
+func TestRunApworldPreflight_theSameFileTwiceIsABadRequest(t *testing.T) {
+	svc := &fakePreflights{err: service.ErrDuplicateRequiredFile}
+	rec := httptest.NewRecorder()
+
+	handleRunApworldPreflight(svc)(rec, preflightRequest(`{"requiredFileIds":["f1","f1"]}`))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestRunApworldPreflight_anOversizedBodyIsRefused(t *testing.T) {
+	svc := &fakePreflights{}
+	rec := httptest.NewRecorder()
+
+	handleRunApworldPreflight(svc)(rec, preflightRequest(`{"requiredFileIds":["`+strings.Repeat("a", preflightBodyMaxBytes)+`"]}`))
 
 	if rec.Code != http.StatusBadRequest || svc.started {
 		t.Fatalf("status = %d, started = %v", rec.Code, svc.started)

@@ -35,6 +35,8 @@ var (
 	ErrRequiredFilesFull    = errors.New("required files storage full")
 	ErrInvalidRequiredFile  = errors.New("invalid required file")
 	ErrTooManyRequiredFiles = errors.New("too many required files")
+	// ErrDuplicateRequiredFile: one request named the same file twice - a client bug, not a file to send again.
+	ErrDuplicateRequiredFile = errors.New("the same required file named twice")
 )
 
 // requiredFileSetting is the host.yaml setting a failed generation names (story 44.1): Group.key.
@@ -103,7 +105,9 @@ func (st *requiredFileStore) has(ids []string, now time.Time) bool {
 	return true
 }
 
-// take consumes the files: all of them, or none when one is unknown or expired.
+// take consumes the files: all of them, or none when one is unknown or expired. Their bytes keep counting
+// against the cap until free is called (review of story 44.6): a test waiting for a container still holds
+// them in memory, and the cap is what bounds that memory.
 func (st *requiredFileStore) take(ids []string, now time.Time) ([]RequiredFile, error) {
 	if len(ids) > MaxRequiredFilesPerGeneration {
 		return nil, ErrTooManyRequiredFiles
@@ -113,7 +117,10 @@ func (st *requiredFileStore) take(ids []string, now time.Time) ([]RequiredFile, 
 	st.pruneLocked(now)
 	seen := map[string]bool{}
 	for _, id := range ids {
-		if _, ok := st.files[id]; !ok || seen[id] {
+		if seen[id] {
+			return nil, ErrDuplicateRequiredFile
+		}
+		if _, ok := st.files[id]; !ok {
 			return nil, ErrRequiredFileExpired
 		}
 		seen[id] = true
@@ -121,9 +128,18 @@ func (st *requiredFileStore) take(ids []string, now time.Time) ([]RequiredFile, 
 	files := make([]RequiredFile, 0, len(ids))
 	for _, id := range ids {
 		files = append(files, st.files[id].file)
-		st.removeLocked(id)
+		delete(st.files, id)
 	}
 	return files, nil
+}
+
+// free gives back the room of files taken, once the run that read them is over.
+func (st *requiredFileStore) free(files []RequiredFile) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, f := range files {
+		st.size -= int64(len(f.Data))
+	}
 }
 
 // release drops a staged file; an unknown id is not an error.
@@ -185,12 +201,17 @@ func (s *Service) ReleaseRequiredFile(id string) {
 }
 
 // takeRequiredFiles consumes the staged files a generation or a test reads (stories 44.2, 44.6); no ids
-// takes nothing.
-func (s *Service) takeRequiredFiles(ids []string) ([]RequiredFile, error) {
+// takes nothing. done gives their room back and must be called once the run is over, whatever its outcome.
+func (s *Service) takeRequiredFiles(ids []string) ([]RequiredFile, func(), error) {
 	if len(ids) == 0 {
-		return nil, nil
+		return nil, func() {}, nil
 	}
-	return s.requiredFiles.take(ids, time.Now())
+	files, err := s.requiredFiles.take(ids, time.Now())
+	if err != nil {
+		return nil, func() {}, err
+	}
+	var once sync.Once
+	return files, func() { once.Do(func() { s.requiredFiles.free(files) }) }, nil
 }
 
 func dockerRequiredFiles(files []RequiredFile) []docker.RequiredFile {

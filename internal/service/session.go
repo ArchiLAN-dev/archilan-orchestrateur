@@ -225,7 +225,7 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 	}
 
 	// Consumed here, once nothing else can refuse the generation: one use, then gone with its container.
-	requiredFiles, err := s.requiredFiles.take(req.RequiredFileIDs, time.Now())
+	requiredFiles, done, err := s.takeRequiredFiles(req.RequiredFileIDs)
 	if err != nil {
 		return err
 	}
@@ -238,15 +238,20 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 			CreatedAt: now,
 			UpdatedAt: now,
 		}); err != nil {
+			done()
 			return fmt.Errorf("insert session: %w", err)
 		}
 	} else {
 		if err := s.db.UpdateSessionStatus(req.SessionID, "pending", nil); err != nil {
+			done()
 			return fmt.Errorf("reset session status: %w", err)
 		}
 	}
 
-	go s.runGeneration(req, tarBuf, requiredFiles)
+	go func() {
+		defer done()
+		s.runGeneration(req, tarBuf, requiredFiles)
+	}()
 	return nil
 }
 

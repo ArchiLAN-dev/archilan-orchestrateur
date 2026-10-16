@@ -159,3 +159,28 @@ func TestAVerdictRemembersItRanWithTheProvidedFiles(t *testing.T) {
 		t.Errorf("a skipped verdict ran nothing, got %+v", p)
 	}
 }
+
+// Review of story 44.6: the last run started owns the verdict. A run that finishes after a newer one was
+// started - the rolling test behind the admin's run with the ROM - must not overwrite it.
+func TestOnlyTheLastRunStartedWritesTheVerdict(t *testing.T) {
+	p := storage.ApworldPreflight{Status: PreflightStatusPassed}
+
+	openRun("run-a", false)(&p)
+	openRun("run-b", true)(&p)
+
+	if ownsRun(&p, "run-a") {
+		t.Error("an older run must not own the verdict")
+	}
+	if !ownsRun(&p, "run-b") || !p.PendingWithFiles || p.Status != PreflightStatusPending {
+		t.Errorf("the newest run owns a pending verdict with its files, got %+v", p)
+	}
+}
+
+func TestAVerdictWithoutARunIsOwnedByARunWithoutId(t *testing.T) {
+	// The upload hook runs without marking pending: a fresh apworld has no run id, nor does its run.
+	p := storage.ApworldPreflight{}
+
+	if !ownsRun(&p, "") {
+		t.Error("the upload-time run must be able to write the first verdict")
+	}
+}

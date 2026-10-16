@@ -41,13 +41,14 @@ func (s *Service) StartSlotPreflight(playerYaml []byte, apworldHash string, requ
 	if apworldHash != "" && s.storage == nil {
 		return "", ErrStorageNotConfigured
 	}
-	requiredFiles, err := s.takeRequiredFiles(requiredFileIDs)
+	requiredFiles, done, err := s.takeRequiredFiles(requiredFileIDs)
 	if err != nil {
 		return "", err
 	}
 
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
+		done()
 		return "", fmt.Errorf("generate job id: %w", err)
 	}
 	id := hex.EncodeToString(buf)
@@ -58,7 +59,10 @@ func (s *Service) StartSlotPreflight(playerYaml []byte, apworldHash string, requ
 	s.slotPreflights[id] = &SlotPreflight{Status: SlotPreflightPending, CreatedAt: now}
 	s.slotPreflightMu.Unlock()
 
-	go s.runSlotPreflight(id, playerYaml, apworldHash, requiredFiles)
+	go func() {
+		defer done()
+		s.runSlotPreflight(id, playerYaml, apworldHash, requiredFiles)
+	}()
 
 	return id, nil
 }

@@ -72,6 +72,22 @@ func markPending(p *storage.ApworldPreflight) {
 	p.WithRequiredFiles = false
 }
 
+// openRun marks the verdict pending for a run that now owns it (review of story 44.6): the last run started
+// is the only one allowed to write the verdict.
+func openRun(runID string, withFiles bool) func(p *storage.ApworldPreflight) {
+	return func(p *storage.ApworldPreflight) {
+		markPending(p)
+		p.RunID = runID
+		p.PendingWithFiles = withFiles
+	}
+}
+
+// ownsRun reports whether a finished run may write the verdict: only the last one started does. The upload-time
+// run has no id and owns a verdict no run has claimed.
+func ownsRun(p *storage.ApworldPreflight, runID string) bool {
+	return p.RunID == runID
+}
+
 // recordProvidedFiles notes whether a finished test generation was given the file its world reads
 // (story 44.6). A skipped verdict ran nothing.
 func recordProvidedFiles(p *storage.ApworldPreflight, status string, withFiles bool) {

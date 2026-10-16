@@ -31,8 +31,13 @@ func TestRequiredFileStore_aStagedFileIsTakenOnceThenGone(t *testing.T) {
 	if _, err := st.take([]string{id}, now); !errors.Is(err, ErrRequiredFileExpired) {
 		t.Fatalf("second take: err = %v, want ErrRequiredFileExpired", err)
 	}
+	// The room stays counted until its run is over (review of story 44.6).
+	if st.size != 3 {
+		t.Errorf("size = %d after take, want 3 until free", st.size)
+	}
+	st.free(files)
 	if st.size != 0 {
-		t.Errorf("size = %d after take, want 0", st.size)
+		t.Errorf("size = %d after free, want 0", st.size)
 	}
 }
 
@@ -47,8 +52,8 @@ func TestRequiredFileStore_takesAllOrNone(t *testing.T) {
 	if !st.has([]string{id}, now) {
 		t.Fatal("a failed take consumed the valid file")
 	}
-	if _, err := st.take([]string{id, id}, now); !errors.Is(err, ErrRequiredFileExpired) {
-		t.Fatalf("the same id twice: err = %v, want ErrRequiredFileExpired", err)
+	if _, err := st.take([]string{id, id}, now); !errors.Is(err, ErrDuplicateRequiredFile) {
+		t.Fatalf("the same id twice: err = %v, want ErrDuplicateRequiredFile", err)
 	}
 }
 
