@@ -219,7 +219,7 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) error {
 		}
 	}
 
-	tarBuf, _, err := s.buildDataTar(ctx, req.SessionID)
+	tarBuf, _, err := s.buildDataTar(ctx, req.SessionID, false)
 	if err != nil {
 		return fmt.Errorf("build data tar: %w", err)
 	}
@@ -625,7 +625,18 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 	// tooling that rebuilds the world (reachability) finds /data/yamls and /data/worlds.
 	// The provided file is the pre-generated multidata - no generation is run here.
 	if s.storage != nil {
-		tarBuf, n, err := s.buildDataTar(ctx, req.SessionID)
+		// Story 9.56: the archive's own roster says whether it was generated with the observer slot, and is
+		// the roster the bridge attaches by when the API sent none.
+		withObserver := false
+		if roster, err := s.archiveRoster(ctx, fileData, filename); err != nil {
+			s.log.Warn("launch from file: could not read the archive roster", "session_id", req.SessionID, "err", err)
+		} else {
+			withObserver = hasObserverSlot(roster)
+			if len(req.SlotNames) == 0 {
+				req.SlotNames = roster
+			}
+		}
+		tarBuf, n, err := s.buildDataTar(ctx, req.SessionID, withObserver)
 		if err != nil {
 			return fmt.Errorf("build data tar: %w", err)
 		}

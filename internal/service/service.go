@@ -448,7 +448,7 @@ func (s *Service) startContainer(sessionID string, port int, serverPassword, adm
 	// Build tar from Minio files if storage is configured.
 	var tarData io.Reader
 	if s.storage != nil {
-		tr, n, err := s.buildDataTar(ctx, sessionID)
+		tr, n, err := s.buildDataTar(ctx, sessionID, true)
 		if err != nil {
 			s.log.Error("build data tar failed", "session_id", sessionID, "err", err)
 			_ = s.db.UpdateStatus(sessionID, "crashed", nil)
@@ -518,7 +518,9 @@ func (s *Service) startContainer(sessionID string, port int, serverPassword, adm
 // buildDataTar downloads apworld and YAML files from Minio and returns a tar archive
 // ready to be uploaded into the container at /data. Returns the number of files written.
 // All entries are owned by UID/GID 1000 (bridge user) so the bridge process can write to them.
-func (s *Service) buildDataTar(ctx context.Context, sessionID string) (*bytes.Buffer, int, error) {
+//
+// withObserver adds the historical "Bridge" observer yaml: only for a multiworld generated with it (story 9.56).
+func (s *Service) buildDataTar(ctx context.Context, sessionID string, withObserver bool) (*bytes.Buffer, int, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	written := 0
@@ -577,9 +579,15 @@ func (s *Service) buildDataTar(ctx context.Context, sessionID string) (*bytes.Bu
 		written++
 	}
 
-	// Inject the Bridge observer slot so the bridge WS client can connect to the AP server.
-	// The Archipelago game type is a TextOnly spectator slot; it needs explicit game options
-	// so that Generate.roll_settings does not raise "No game options found".
+	// Story 9.56: a game generated from now on has no observer slot - the bridge attaches to the first real
+	// slot. A multiworld generated before still has one, and the yamls staged next to it must match it, or the
+	// exact reachability rebuild would not find the same world again.
+	if !withObserver {
+		if err := tw.Close(); err != nil {
+			return nil, 0, err
+		}
+		return &buf, written, nil
+	}
 	bridgeYaml := []byte("name: Bridge\ngame: Archipelago\nArchipelago:\n  progression_balancing: 0\n  accessibility: items\n")
 	if err := tw.WriteHeader(&tar.Header{
 		Name: "yamls/_bridge_observer.yaml", Mode: 0644, Size: int64(len(bridgeYaml)), Uid: 1000, Gid: 1000,
