@@ -145,6 +145,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/apworlds/{hash}/items": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the static item list (item_name_to_id keys) and the item groups (item_name_groups, without \"Everything\") introspected from the apworld's World class. Empty until the apworld has been introspected by an image that knows items (story 9.58).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apworlds"
+                ],
+                "summary": "Get apworld static item names and item groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Apworld SHA-256 hash",
+                        "name": "hash",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ApworldItems"
+                        }
+                    }
+                }
+            }
+        },
         "/apworlds/{hash}/locations": {
             "get": {
                 "security": [
@@ -2354,6 +2388,26 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/api.TemplateOption"
+                    }
+                }
+            }
+        },
+        "service.ApworldItems": {
+            "type": "object",
+            "properties": {
+                "itemGroups": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 }
             }

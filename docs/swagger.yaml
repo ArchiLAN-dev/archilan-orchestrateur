@@ -452,6 +452,19 @@ definitions:
           $ref: '#/definitions/api.TemplateOption'
         type: array
     type: object
+  service.ApworldItems:
+    properties:
+      itemGroups:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+      items:
+        items:
+          type: string
+        type: array
+    type: object
   service.DeclaredFile:
     properties:
       description:
@@ -569,6 +582,30 @@ paths:
       security:
       - BearerAuth: []
       summary: Re-run option introspection on the stored apworld
+      tags:
+      - apworlds
+  /apworlds/{hash}/items:
+    get:
+      description: Returns the static item list (item_name_to_id keys) and the item
+        groups (item_name_groups, without "Everything") introspected from the apworld's
+        World class. Empty until the apworld has been introspected by an image that
+        knows items (story 9.58).
+      parameters:
+      - description: Apworld SHA-256 hash
+        in: path
+        name: hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ApworldItems'
+      security:
+      - BearerAuth: []
+      summary: Get apworld static item names and item groups
       tags:
       - apworlds
   /apworlds/{hash}/locations:
