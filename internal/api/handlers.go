@@ -642,6 +642,21 @@ func handleGetApworldLocations(svc *service.Service) http.HandlerFunc {
 	}
 }
 
+// handleGetApworldItems godoc
+// @Summary     Get apworld static item names and item groups
+// @Description Returns the static item list (item_name_to_id keys) and the item groups (item_name_groups, without "Everything") introspected from the apworld's World class. Empty until the apworld has been introspected by an image that knows items (story 9.58).
+// @Tags        apworlds
+// @Param       hash path string true "Apworld SHA-256 hash"
+// @Produce     json
+// @Success     200 {object} service.ApworldItems
+// @Security    BearerAuth
+// @Router      /apworlds/{hash}/items [get]
+func handleGetApworldItems(svc *service.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, svc.GetApworldItems(r.Context(), chi.URLParam(r, "hash")))
+	}
+}
+
 // handleListContainers godoc
 // @Summary     List containers
 // @Description Returns all managed Bridge containers

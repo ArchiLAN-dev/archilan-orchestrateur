@@ -233,6 +233,42 @@ func (s *Service) GetApworldLocations(ctx context.Context, hash string) []string
 	return parsed.Locations
 }
 
+// ApworldItems is the static item list and the item groups of an apworld (story 9.58, archilan.fr):
+// item_name_to_id keys and item_name_groups, without Archipelago's implicit "Everything" group.
+type ApworldItems struct {
+	Items  []string            `json:"items"`
+	Groups map[string][]string `json:"itemGroups"`
+}
+
+// GetApworldItems returns the introspected item names and item groups of an apworld, read from
+// the same introspection sidecar as its locations. Empty (never nil) when storage is not
+// configured, the sidecar does not exist yet, or it was written before the image knew items.
+func (s *Service) GetApworldItems(ctx context.Context, hash string) ApworldItems {
+	empty := ApworldItems{Items: []string{}, Groups: map[string][]string{}}
+	if s.storage == nil {
+		return empty
+	}
+	raw, found, err := s.storage.DownloadApworldOptionTypes(ctx, hash)
+	if err != nil || !found {
+		return empty
+	}
+	return parseApworldItems(raw)
+}
+
+func parseApworldItems(raw []byte) ApworldItems {
+	parsed := ApworldItems{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return ApworldItems{Items: []string{}, Groups: map[string][]string{}}
+	}
+	if parsed.Items == nil {
+		parsed.Items = []string{}
+	}
+	if parsed.Groups == nil {
+		parsed.Groups = map[string][]string{}
+	}
+	return parsed
+}
+
 // ListApworlds returns metadata for all uploaded apworlds that have a .json sidecar.
 func (s *Service) ListApworlds(ctx context.Context) ([]storage.ApworldMeta, error) {
 	if s.storage == nil {
