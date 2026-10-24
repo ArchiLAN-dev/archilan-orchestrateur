@@ -330,6 +330,18 @@ definitions:
         example: sha256:4b1c2d
         type: string
     type: object
+  api.SessionLogsResponse:
+    properties:
+      container:
+        example: ap-server-abc123
+        type: string
+      found:
+        example: true
+        type: boolean
+      logs:
+        example: 2026-10-24T10:00:00.000000000Z Hosting game at 0.0.0.0:38281
+        type: string
+    type: object
   api.SessionResponse:
     properties:
       apPort:
@@ -1514,6 +1526,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Launch session from a pre-built .archipelago file
+      tags:
+      - sessions
+  /sessions/{sessionId}/logs:
+    get:
+      description: |-
+        Returns the last lines of one of the session's containers (story 17.33): the Archipelago server
+        (ap), the bridge (bridge) or the generation (gen). stdout and stderr are interleaved in order,
+        each line prefixed with Docker's timestamp. A container that does not exist is not an error:
+        found is false and logs is empty.
+      parameters:
+      - description: Session ID
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      - description: Container kind
+        enum:
+        - ap
+        - bridge
+        - gen
+        in: query
+        name: container
+        required: true
+        type: string
+      - description: Number of lines (1-2000, default 200)
+        in: query
+        name: tail
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SessionLogsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Logs of a session container
       tags:
       - sessions
   /sessions/{sessionId}/preflight:

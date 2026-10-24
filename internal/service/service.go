@@ -39,6 +39,8 @@ type Service struct {
 	images  imageInspector  // the image verdicts are stamped with (story 38.8)
 	// containers stops containers by name at boot recovery (story 17.26); the docker client in prod.
 	containers containerStopper
+	// logs reads a session container's logs for the admin (story 17.33); the docker client in prod.
+	logs containerLogReader
 	cfg        *config.Config
 	log        *slog.Logger
 
@@ -80,6 +82,7 @@ func New(
 		storage:    storageCl,
 		images:     dockerClient,
 		containers: dockerClient,
+		logs:       dockerClient,
 		cfg:        cfg,
 		log:        log,
 
