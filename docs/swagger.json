@@ -1538,6 +1538,76 @@
                 }
             }
         },
+        "/sessions/{sessionId}/logs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the last lines of one of the session's containers (story 17.33): the Archipelago server\n(ap), the bridge (bridge) or the generation (gen). stdout and stderr are interleaved in order,\neach line prefixed with Docker's timestamp. A container that does not exist is not an error:\nfound is false and logs is empty.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Logs of a session container",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "ap",
+                            "bridge",
+                            "gen"
+                        ],
+                        "type": "string",
+                        "description": "Container kind",
+                        "name": "container",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of lines (1-2000, default 200)",
+                        "name": "tail",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.SessionLogsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{sessionId}/preflight": {
             "post": {
                 "security": [
@@ -2213,6 +2283,23 @@
                 "apImageId": {
                     "type": "string",
                     "example": "sha256:4b1c2d"
+                }
+            }
+        },
+        "api.SessionLogsResponse": {
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string",
+                    "example": "ap-server-abc123"
+                },
+                "found": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "logs": {
+                    "type": "string",
+                    "example": "2026-10-24T10:00:00.000000000Z Hosting game at 0.0.0.0:38281"
                 }
             }
         },
