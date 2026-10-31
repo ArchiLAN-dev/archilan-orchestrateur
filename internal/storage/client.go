@@ -52,6 +52,8 @@ type ApworldPreflight struct {
 	// WithRequiredFiles: the test generation was given the file the world reads, a ROM (story 44.6). Only
 	// an admin can provide it, so the rolling test, which cannot, leaves such a pass alone.
 	WithRequiredFiles bool `json:"withRequiredFiles,omitempty"`
+	// WithPartner: the test generation had a second player beside the tested one (story 38.30).
+	WithPartner bool `json:"withPartner,omitempty"`
 	// RunID names the run that owns a pending verdict: only the last run started may write it, so an older
 	// one finishing later (the rolling test behind an admin's run with the ROM) cannot overwrite it. Empty
 	// once settled, and for the upload-time run.

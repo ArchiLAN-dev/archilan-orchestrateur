@@ -144,19 +144,45 @@ func TestRuntimeWithoutAnInspectorKeepsTheReference(t *testing.T) {
 func TestAVerdictRemembersItRanWithTheProvidedFiles(t *testing.T) {
 	p := storage.ApworldPreflight{}
 
-	recordProvidedFiles(&p, PreflightStatusPassed, true)
+	recordInputs(&p, PreflightStatusPassed, verdictInputs{withFiles: true})
 	if !p.WithRequiredFiles {
 		t.Fatalf("a test given its file should say so, got %+v", p)
 	}
 
-	recordProvidedFiles(&p, PreflightStatusFailed, false)
+	recordInputs(&p, PreflightStatusFailed, verdictInputs{})
 	if p.WithRequiredFiles {
 		t.Errorf("a test without a file should not keep the previous flag, got %+v", p)
 	}
 
-	recordProvidedFiles(&p, PreflightStatusSkipped, true)
+	recordInputs(&p, PreflightStatusSkipped, verdictInputs{withFiles: true})
 	if p.WithRequiredFiles {
 		t.Errorf("a skipped verdict ran nothing, got %+v", p)
+	}
+}
+
+// Story 38.30: a verdict says whether the test generation had a partner player, like it says it had a file.
+func TestAVerdictRemembersItRanWithAPartner(t *testing.T) {
+	p := storage.ApworldPreflight{}
+
+	recordInputs(&p, PreflightStatusPassed, verdictInputs{withPartner: true})
+	if !p.WithPartner || p.WithRequiredFiles {
+		t.Fatalf("a test with a partner should say so, and only so, got %+v", p)
+	}
+
+	recordInputs(&p, PreflightStatusFailed, verdictInputs{})
+	if p.WithPartner {
+		t.Errorf("a solo test should not keep the previous flag, got %+v", p)
+	}
+
+	recordInputs(&p, PreflightStatusSkipped, verdictInputs{withPartner: true})
+	if p.WithPartner {
+		t.Errorf("a skipped verdict ran nothing, got %+v", p)
+	}
+
+	p.WithPartner = true
+	markPending(&p)
+	if p.WithPartner {
+		t.Errorf("a pending run knows nothing yet, got %+v", p)
 	}
 }
 

@@ -21,14 +21,15 @@ type fakePreflights struct {
 	yaml    string
 	err     error
 	started bool
+	partner bool
 }
 
 func (f *fakePreflights) GetApworldMetaByHash(context.Context, string) (storage.ApworldMeta, error) {
 	return storage.ApworldMeta{}, nil
 }
 
-func (f *fakePreflights) StartApworldPreflight(hash string, ids []string) error {
-	f.hash, f.ids, f.started = hash, ids, f.err == nil
+func (f *fakePreflights) StartApworldPreflight(hash string, ids []string, withPartner bool) error {
+	f.hash, f.ids, f.partner, f.started = hash, ids, withPartner, f.err == nil
 	return f.err
 }
 
@@ -59,6 +60,25 @@ func TestRunApworldPreflight_passesTheStagedFiles(t *testing.T) {
 	}
 }
 
+// Story 38.30: the re-check of a meta-game asks for a partner player.
+func TestRunApworldPreflight_passesThePartnerRequest(t *testing.T) {
+	svc := &fakePreflights{}
+	rec := httptest.NewRecorder()
+
+	handleRunApworldPreflight(svc)(rec, preflightRequest(`{"withPartner":true}`))
+
+	if rec.Code != http.StatusAccepted || !svc.partner || len(svc.ids) != 0 {
+		t.Fatalf("status = %d, partner = %v, ids = %v", rec.Code, svc.partner, svc.ids)
+	}
+}
+
+// Story 38.30: the verdict says it was obtained with a partner.
+func TestApiPreflight_saysTheVerdictHadAPartner(t *testing.T) {
+	if got := apiPreflight(&storage.ApworldPreflight{Status: "passed", WithPartner: true}); !got.WithPartner {
+		t.Fatalf("got %+v", got)
+	}
+}
+
 // The re-check without a body still works as before (upload hook, rolling test).
 func TestRunApworldPreflight_withoutABodyStartsWithoutFiles(t *testing.T) {
 	svc := &fakePreflights{}
@@ -66,8 +86,8 @@ func TestRunApworldPreflight_withoutABodyStartsWithoutFiles(t *testing.T) {
 
 	handleRunApworldPreflight(svc)(rec, preflightRequest(""))
 
-	if rec.Code != http.StatusAccepted || !svc.started || len(svc.ids) != 0 {
-		t.Fatalf("status = %d, started = %v, ids = %v", rec.Code, svc.started, svc.ids)
+	if rec.Code != http.StatusAccepted || !svc.started || len(svc.ids) != 0 || svc.partner {
+		t.Fatalf("status = %d, started = %v, ids = %v, partner = %v", rec.Code, svc.started, svc.ids, svc.partner)
 	}
 }
 

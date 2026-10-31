@@ -69,6 +69,12 @@ const docTemplate = `{
                         "name": "file",
                         "in": "formData",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Test generation with a partner player, for a meta-game (story 38.30)",
+                        "name": "withPartner",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -1902,6 +1908,10 @@ const docTemplate = `{
                     "description": "Warning is what the generator reported on a pass (story 38.12), e.g. an accessibility check not met.",
                     "type": "string"
                 },
+                "withPartner": {
+                    "description": "WithPartner: the test generation had a second player beside the tested one (story 38.30).",
+                    "type": "boolean"
+                },
                 "withRequiredFiles": {
                     "description": "WithRequiredFiles: the test generation was given the file its world reads (story 44.6).",
                     "type": "boolean"
@@ -2277,6 +2287,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "withPartner": {
+                    "description": "WithPartner: generate a second player beside the tested one (story 38.30), for a meta-game that cannot\ngenerate solo.",
+                    "type": "boolean"
                 }
             }
         },

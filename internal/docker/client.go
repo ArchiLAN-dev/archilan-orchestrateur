@@ -638,19 +638,11 @@ func (c *Client) GenerateTemplate(ctx context.Context, apworldData []byte, hash 
 //
 // A generation that succeeded with warnings (story 38.12: accessibility not met, as the official
 // Launcher allows) returns their text; an unreadable log only costs the warning, never the pass.
-func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte, requiredFiles []RequiredFile) (string, string, error) {
-	var tarBuf bytes.Buffer
-	tw := tar.NewWriter(&tarBuf)
-	if len(apworldData) > 0 {
-		_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "worlds/", Mode: 0755})
-		_ = tw.WriteHeader(&tar.Header{Name: "worlds/" + hash + ".apworld", Mode: 0644, Size: int64(len(apworldData))})
-		_, _ = tw.Write(apworldData)
-	}
-	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "yamls/", Mode: 0755})
-	_ = tw.WriteHeader(&tar.Header{Name: "yamls/preflight.yaml", Mode: 0644, Size: int64(len(playerYaml))})
-	_, _ = tw.Write(playerYaml)
-	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
-	_ = tw.Close()
+//
+// partnerYaml, when not empty, is a second player generated beside the tested one (story 38.30): a meta-game
+// such as Tombola cannot place its progression in its own world, so it cannot generate solo.
+func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte, requiredFiles []RequiredFile, partnerYaml []byte) (string, string, error) {
+	tarBuf := preflightTar(apworldData, hash, playerYaml, partnerYaml)
 
 	containerID, err := c.createOneShot(ctx, c.cfg.APImage, preflightCommand(requiredFiles))
 	if err != nil {
@@ -663,7 +655,7 @@ func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash
 		c.log.Warn("could not read the image of the preflight container", "container", containerID, "err", inspectErr)
 	}
 
-	if err := c.putArchiveTo(ctx, containerID, "/tmp", &tarBuf); err != nil {
+	if err := c.putArchiveTo(ctx, containerID, "/tmp", tarBuf); err != nil {
 		return imageID, "", fmt.Errorf("copy apworld to preflight container: %w", err)
 	}
 	if len(requiredFiles) > 0 {
@@ -693,6 +685,28 @@ func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash
 		c.log.Warn("could not read the logs of a passed preflight", "container", containerID, "err", logsErr)
 	}
 	return imageID, generationWarnings(stderr), nil
+}
+
+// preflightTar is what a test generation's container finds under /tmp: the apworld when there is one, the
+// tested player's YAML and, story 38.30, the partner's beside it.
+func preflightTar(apworldData []byte, hash string, playerYaml, partnerYaml []byte) *bytes.Buffer {
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+	if len(apworldData) > 0 {
+		_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "worlds/", Mode: 0755})
+		_ = tw.WriteHeader(&tar.Header{Name: "worlds/" + hash + ".apworld", Mode: 0644, Size: int64(len(apworldData))})
+		_, _ = tw.Write(apworldData)
+	}
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "yamls/", Mode: 0755})
+	_ = tw.WriteHeader(&tar.Header{Name: "yamls/preflight.yaml", Mode: 0644, Size: int64(len(playerYaml))})
+	_, _ = tw.Write(playerYaml)
+	if len(partnerYaml) > 0 {
+		_ = tw.WriteHeader(&tar.Header{Name: "yamls/partner.yaml", Mode: 0644, Size: int64(len(partnerYaml))})
+		_, _ = tw.Write(partnerYaml)
+	}
+	_ = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "output/", Mode: 0755})
+	_ = tw.Close()
+	return &tarBuf
 }
 
 // ---------------------------------------------------------------------------

@@ -93,7 +93,9 @@ func isSentinelLine(line string) bool {
 // requiredFiles are the files an admin provided for this run only (story 44.6); the verdict says so.
 //
 // runID is the run that owns the verdict (openRun); a run that is no longer the last started writes nothing.
-func (s *Service) RunApworldPreflight(ctx context.Context, hash string, requiredFiles []RequiredFile, runID string) (storage.ApworldMeta, error) {
+//
+// withPartner adds a second player, PartnerYAML (story 38.30), for a meta-game that cannot generate solo.
+func (s *Service) RunApworldPreflight(ctx context.Context, hash string, requiredFiles []RequiredFile, withPartner bool, runID string) (storage.ApworldMeta, error) {
 	if s.storage == nil {
 		return storage.ApworldMeta{}, ErrStorageNotConfigured
 	}
@@ -109,7 +111,7 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string, required
 	}
 	if !found || len(template) == 0 {
 		// No template to generate with: the check cannot run (AC2 "skipped").
-		return s.storeApworldPreflight(ctx, hash, PreflightStatusSkipped, "", "", "", false, runID)
+		return s.storeApworldPreflight(ctx, hash, PreflightStatusSkipped, "", "", "", verdictInputs{}, runID)
 	}
 
 	// Same container-concurrency budget as the slot preflights (story 9.42 AC6).
@@ -119,10 +121,14 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string, required
 	genCtx, cancel := context.WithTimeout(ctx, s.cfg.PreflightTimeout)
 	defer cancel()
 
-	withFiles := len(requiredFiles) > 0
-	imageID, warning, genErr := s.docker.PreflightGenerate(genCtx, data, hash, template, dockerRequiredFiles(requiredFiles))
+	inputs := verdictInputs{withFiles: len(requiredFiles) > 0, withPartner: withPartner}
+	var partner []byte
+	if withPartner {
+		partner = []byte(PartnerYAML)
+	}
+	imageID, warning, genErr := s.docker.PreflightGenerate(genCtx, data, hash, template, dockerRequiredFiles(requiredFiles), partner)
 	if genErr == nil {
-		return s.storeApworldPreflight(ctx, hash, PreflightStatusPassed, "", preflightErrorExcerpt(warning, preflightErrorExcerptMax), imageID, withFiles, runID)
+		return s.storeApworldPreflight(ctx, hash, PreflightStatusPassed, "", preflightErrorExcerpt(warning, preflightErrorExcerptMax), imageID, inputs, runID)
 	}
 
 	// A timeout counts as failure (AC1): a world that cannot generate a solo seed within
@@ -130,7 +136,7 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string, required
 	if genCtx.Err() != nil {
 		genErr = fmt.Errorf("preflight timed out after %s: %w", s.cfg.PreflightTimeout, genErr)
 	}
-	return s.storeApworldPreflight(ctx, hash, PreflightStatusFailed, preflightErrorExcerpt(genErr.Error(), preflightErrorExcerptMax), "", imageID, withFiles, runID)
+	return s.storeApworldPreflight(ctx, hash, PreflightStatusFailed, preflightErrorExcerpt(genErr.Error(), preflightErrorExcerptMax), "", imageID, inputs, runID)
 }
 
 // StartApworldPreflight marks the verdict pending and runs the check in the background
@@ -144,7 +150,7 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string, required
 // replace a meaningful verdict with a missing-file failure); the new run owns the verdict, so an older one
 // finishing later writes nothing; and a run that cannot complete puts the previous verdict back instead of
 // leaving it pending for good.
-func (s *Service) StartApworldPreflight(hash string, requiredFileIDs []string) error {
+func (s *Service) StartApworldPreflight(hash string, requiredFileIDs []string, withPartner bool) error {
 	if s.storage == nil {
 		return ErrStorageNotConfigured
 	}
@@ -176,7 +182,7 @@ func (s *Service) StartApworldPreflight(hash string, requiredFileIDs []string) e
 	}
 	go func() {
 		defer done()
-		if _, err := s.RunApworldPreflight(bgCtx, hash, requiredFiles, runID); err != nil {
+		if _, err := s.RunApworldPreflight(bgCtx, hash, requiredFiles, withPartner, runID); err != nil {
 			s.log.Warn("apworld preflight did not complete", "hash", hash, "err", err)
 			s.restoreApworldPreflight(bgCtx, hash, runID, previous)
 		}
@@ -227,7 +233,7 @@ func (s *Service) OverrideApworldPreflight(ctx context.Context, hash string, ove
 
 // storeApworldPreflight records a completed verdict, stamped with the image of the container
 // that produced it (story 38.8), not with whatever the tag points to by now.
-func (s *Service) storeApworldPreflight(ctx context.Context, hash, status, errExcerpt, warning, imageID string, withFiles bool, runID string) (storage.ApworldMeta, error) {
+func (s *Service) storeApworldPreflight(ctx context.Context, hash, status, errExcerpt, warning, imageID string, inputs verdictInputs, runID string) (storage.ApworldMeta, error) {
 	rt := verdictImage(status, s.cfg.APImage, imageID)
 	s.preflightMetaMu.Lock()
 	defer s.preflightMetaMu.Unlock()
@@ -237,8 +243,12 @@ func (s *Service) storeApworldPreflight(ctx context.Context, hash, status, errEx
 			return
 		}
 		applyVerdict(p, status, errExcerpt, warning, time.Now(), rt)
-		recordProvidedFiles(p, status, withFiles)
+		recordInputs(p, status, inputs)
 		p.RunID = ""
 		p.PendingWithFiles = false
 	})
 }
+
+// PartnerYAML is the second player of a test generation with a partner (story 38.30): A Short Hike, a world
+// of the release itself, so nothing else to ship, no file to read, and its default options generate.
+const PartnerYAML = "name: Partner\ngame: A Short Hike\nA Short Hike: {}\n"

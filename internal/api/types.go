@@ -87,12 +87,17 @@ type ApworldPreflight struct {
 	ImageID string `json:"imageId,omitempty" example:"sha256:4b1c2d"`
 	// WithRequiredFiles: the test generation was given the file its world reads (story 44.6).
 	WithRequiredFiles bool `json:"withRequiredFiles,omitempty"`
+	// WithPartner: the test generation had a second player beside the tested one (story 38.30).
+	WithPartner bool `json:"withPartner,omitempty"`
 }
 
 // RunApworldPreflightRequest is the optional body of POST /apworlds/{hash}/preflight (story 44.6).
 type RunApworldPreflightRequest struct {
 	// RequiredFileIDs: files staged with POST /required-files that this test reads (a ROM), one use each.
 	RequiredFileIDs []string `json:"requiredFileIds,omitempty"`
+	// WithPartner: generate a second player beside the tested one (story 38.30), for a meta-game that cannot
+	// generate solo.
+	WithPartner bool `json:"withPartner,omitempty"`
 }
 
 // ApworldEntry represents a single uploaded apworld with its game metadata.

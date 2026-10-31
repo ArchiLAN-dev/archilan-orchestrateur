@@ -61,6 +61,7 @@ func handleHealth() http.HandlerFunc {
 // @Accept      multipart/form-data
 // @Produce     json
 // @Param       file formData file true "The .apworld file"
+// @Param       withPartner formData boolean false "Test generation with a partner player, for a meta-game (story 38.30)"
 // @Success     201 {object} UploadApworldResponse
 // @Failure     400 {object} ErrorResponse
 // @Failure     500 {object} ErrorResponse
@@ -87,7 +88,9 @@ func handleUploadApworld(svc *service.Service) http.HandlerFunc {
 			return
 		}
 
-		hash, yamlData, err := svc.UploadApworld(r.Context(), data)
+		// Story 38.30: the test generation the upload starts adds a partner player for a meta-game.
+		withPartner := r.FormValue("withPartner") == "1" || r.FormValue("withPartner") == "true"
+		hash, yamlData, err := svc.UploadApworld(r.Context(), data, withPartner)
 		if errors.Is(err, service.ErrStorageNotConfigured) {
 			writeError(w, http.StatusServiceUnavailable, "storage not configured")
 			return
@@ -211,6 +214,7 @@ func apiPreflight(p *storage.ApworldPreflight) *ApworldPreflight {
 		ImageID:    p.ImageID,
 
 		WithRequiredFiles: p.WithRequiredFiles,
+		WithPartner:       p.WithPartner,
 	}
 }
 
@@ -236,7 +240,7 @@ func decodeRunApworldPreflightRequest(r *http.Request) (RunApworldPreflightReque
 // provided (story 44.6).
 type apworldPreflightRunner interface {
 	GetApworldMetaByHash(ctx context.Context, hash string) (storage.ApworldMeta, error)
-	StartApworldPreflight(hash string, requiredFileIDs []string) error
+	StartApworldPreflight(hash string, requiredFileIDs []string, withPartner bool) error
 }
 
 // slotPreflightStarter queues a solo test generation of one YAML (story 9.42).
@@ -298,7 +302,7 @@ func handleRunApworldPreflight(svc apworldPreflightRunner) http.HandlerFunc {
 			return
 		}
 
-		if err := svc.StartApworldPreflight(hash, req.RequiredFileIDs); err != nil {
+		if err := svc.StartApworldPreflight(hash, req.RequiredFileIDs, req.WithPartner); err != nil {
 			if !writeRequiredFileError(w, err) {
 				writeError(w, http.StatusServiceUnavailable, err.Error())
 			}
