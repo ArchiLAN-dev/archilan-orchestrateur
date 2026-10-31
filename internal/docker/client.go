@@ -486,7 +486,29 @@ func (c *Client) IntrospectOptions(ctx context.Context, apworldData []byte, hash
 	if err != nil {
 		return nil, fmt.Errorf("read introspect output: %w", err)
 	}
-	return bytes.TrimSpace(out), nil
+	return introspectionJSON(out)
+}
+
+// introspectionJSON keeps the introspection's JSON out of its stdout (story 38.31): the last line that is a JSON
+// object. An apworld that prints at import ("C compression module not found") would otherwise sit in front of it,
+// and the stored sidecar could no longer be read. Images since story 38.31 send such prints to stderr; this
+// covers older ones. No JSON at all is an introspection failure, never a stored sidecar.
+func introspectionJSON(out []byte) ([]byte, error) {
+	lines := bytes.Split(bytes.TrimSpace(out), []byte{'\n'})
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
+		if len(line) > 0 && line[0] == '{' && json.Valid(line) {
+			return line, nil
+		}
+	}
+	return nil, fmt.Errorf("introspection printed no JSON object: %q", firstBytes(out, 200))
+}
+
+func firstBytes(b []byte, n int) []byte {
+	if len(b) > n {
+		return b[:n]
+	}
+	return b
 }
 
 // ListRequiredFiles lists, by game name, the files the worlds shipped with the image declare (story 44.3):

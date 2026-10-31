@@ -28,6 +28,10 @@ var (
 	ErrAlreadyExists        = errors.New("session already exists")
 	ErrPortExhausted        = portpool.ErrExhausted
 	ErrStorageNotConfigured = errors.New("storage not configured")
+	// Story 38.31: an apworld that was never introspected, or whose stored introspection cannot be read, is not
+	// an apworld without locations.
+	ErrIntrospectionNotFound   = errors.New("introspection not found")
+	ErrIntrospectionUnreadable = errors.New("introspection unreadable")
 )
 
 type Service struct {
@@ -221,21 +225,37 @@ func (s *Service) GetApworldOptionTypes(ctx context.Context, hash string) map[st
 // GetApworldLocations returns the introspected static location names for an apworld,
 // read from the same introspection sidecar as the option types (story 9.25 pipeline).
 // Returns nil (no error) if storage is not configured or the sidecar does not exist yet.
-func (s *Service) GetApworldLocations(ctx context.Context, hash string) []string {
+//
+// Story 38.31: an empty list means the world declares no location (Minecraft Modded builds them from the player's
+// options). An apworld never introspected gives ErrIntrospectionNotFound, an unreadable sidecar
+// ErrIntrospectionUnreadable, so the caller never mistakes either for a world without locations.
+func (s *Service) GetApworldLocations(ctx context.Context, hash string) ([]string, error) {
 	if s.storage == nil {
-		return nil
+		return nil, ErrStorageNotConfigured
 	}
 	raw, found, err := s.storage.DownloadApworldOptionTypes(ctx, hash)
-	if err != nil || !found {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("download introspection %s: %w", hash, err)
 	}
+	if !found {
+		return nil, ErrIntrospectionNotFound
+	}
+	return parseApworldLocations(raw)
+}
+
+// parseApworldLocations reads the location list of an introspection sidecar. A sidecar written before story 4.14
+// has no "locations" key: an empty list, not an error.
+func parseApworldLocations(raw []byte) ([]string, error) {
 	var parsed struct {
 		Locations []string `json:"locations"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil
+		return nil, fmt.Errorf("%w: %v", ErrIntrospectionUnreadable, err)
 	}
-	return parsed.Locations
+	if parsed.Locations == nil {
+		return []string{}, nil
+	}
+	return parsed.Locations, nil
 }
 
 // ApworldItems is the static item list and the item groups of an apworld (story 9.58, archilan.fr):
