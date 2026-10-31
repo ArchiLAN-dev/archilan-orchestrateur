@@ -192,7 +192,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the static location list introspected from the apworld's World class (location_name_to_id keys). Empty until the apworld has been introspected.",
+                "description": "Returns the static location list introspected from the apworld's World class (location_name_to_id keys). An empty list means the world declares no location (it builds them from the player's options). 404 when the apworld was never introspected, 500 when its introspection cannot be read (story 38.31).",
                 "produces": [
                     "application/json"
                 ],
@@ -214,6 +214,24 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/api.ApworldLocationsResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }

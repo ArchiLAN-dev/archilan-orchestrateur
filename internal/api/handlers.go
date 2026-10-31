@@ -628,22 +628,36 @@ func handleGetApworldOptions(svc *service.Service) http.HandlerFunc {
 
 // handleGetApworldLocations godoc
 // @Summary     Get apworld static location names
-// @Description Returns the static location list introspected from the apworld's World class (location_name_to_id keys). Empty until the apworld has been introspected.
+// @Description Returns the static location list introspected from the apworld's World class (location_name_to_id keys). An empty list means the world declares no location (it builds them from the player's options). 404 when the apworld was never introspected, 500 when its introspection cannot be read (story 38.31).
 // @Tags        apworlds
 // @Param       hash path string true "Apworld SHA-256 hash"
 // @Produce     json
 // @Success     200 {object} ApworldLocationsResponse
+// @Failure     404 {object} ErrorResponse
+// @Failure     500 {object} ErrorResponse
+// @Failure     503 {object} ErrorResponse
 // @Security    BearerAuth
 // @Router      /apworlds/{hash}/locations [get]
-func handleGetApworldLocations(svc *service.Service) http.HandlerFunc {
+func handleGetApworldLocations(svc apworldLocationsReader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash := chi.URLParam(r, "hash")
-		locations := svc.GetApworldLocations(r.Context(), hash)
-		if locations == nil {
-			locations = []string{}
+		locations, err := svc.GetApworldLocations(r.Context(), hash)
+		switch {
+		case errors.Is(err, service.ErrStorageNotConfigured):
+			writeError(w, http.StatusServiceUnavailable, "storage not configured")
+		case errors.Is(err, service.ErrIntrospectionNotFound):
+			writeError(w, http.StatusNotFound, "introspection not found")
+		case err != nil:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		default:
+			writeJSON(w, http.StatusOK, ApworldLocationsResponse{Locations: locations})
 		}
-		writeJSON(w, http.StatusOK, ApworldLocationsResponse{Locations: locations})
 	}
+}
+
+// apworldLocationsReader is what the locations endpoint needs (story 38.31).
+type apworldLocationsReader interface {
+	GetApworldLocations(ctx context.Context, hash string) ([]string, error)
 }
 
 // handleGetApworldItems godoc

@@ -1,46 +1,35 @@
 package service
 
 import (
-	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
 )
 
-// Story 4.14 (archilan.fr): the introspection sidecar now also carries the static
-// location list under "locations"; GetApworldLocations parses it from the same
-// {options, locations} JSON the option-types endpoint reads.
+// Story 4.14 (archilan.fr): the introspection sidecar also carries the static location list under "locations".
 func TestApworldLocations_ParsesFromSidecar(t *testing.T) {
-	raw := []byte(`{"options":{"song_difficulty_min":{"type":"range","min":1,"max":11}},"locations":["Boss Reward","Chest 1","Chest 2"]}`)
+	got, err := parseApworldLocations([]byte(`{"options":{"song_difficulty_min":{"type":"range","min":1,"max":11}},"locations":["Boss Reward","Chest 1","Chest 2"]}`))
 
-	var parsed struct {
-		Locations []string `json:"locations"`
-	}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	want := []string{"Boss Reward", "Chest 1", "Chest 2"}
-	if len(parsed.Locations) != len(want) {
-		t.Fatalf("locations len = %d, want %d", len(parsed.Locations), len(want))
-	}
-	for i, w := range want {
-		if parsed.Locations[i] != w {
-			t.Errorf("locations[%d] = %q, want %q", i, parsed.Locations[i], w)
-		}
+	if err != nil || !reflect.DeepEqual(got, []string{"Boss Reward", "Chest 1", "Chest 2"}) {
+		t.Fatalf("got %v, %v", got, err)
 	}
 }
 
-// A sidecar written before 4.14 (no "locations" key) parses to an empty list, not an error -
-// GetApworldLocations then returns nil and the endpoint serves an empty array.
+// A sidecar written before 4.14 (no "locations" key), or a world that declares none (Minecraft Modded, story
+// 38.31): an empty list, not an error.
 func TestApworldLocations_MissingKeyIsEmpty(t *testing.T) {
-	raw := []byte(`{"options":{"grade_needed":{"type":"choice"}}}`)
+	got, err := parseApworldLocations([]byte(`{"options":{"grade_needed":{"type":"choice"}}}`))
 
-	var parsed struct {
-		Locations []string `json:"locations"`
+	if err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("got %#v, %v", got, err)
 	}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(parsed.Locations) != 0 {
-		t.Errorf("locations = %v, want empty", parsed.Locations)
+}
+
+// Story 38.31: an unreadable sidecar is an error, never a world without locations.
+func TestApworldLocations_UnreadableSidecarIsAnError(t *testing.T) {
+	_, err := parseApworldLocations([]byte("C compression module not found.\n{\"options\":{}}"))
+
+	if !errors.Is(err, ErrIntrospectionUnreadable) {
+		t.Fatalf("err = %v, want ErrIntrospectionUnreadable", err)
 	}
 }
