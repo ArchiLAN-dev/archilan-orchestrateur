@@ -96,7 +96,7 @@ func (s *Service) runSlotPreflight(id string, playerYaml []byte, apworldHash str
 		apworldData = data
 	}
 
-	if _, _, err := s.docker.PreflightGenerate(ctx, apworldData, apworldHash, playerYaml, dockerRequiredFiles(requiredFiles)); err != nil {
+	if _, _, err := s.docker.PreflightGenerate(ctx, apworldData, apworldHash, playerYaml, dockerRequiredFiles(requiredFiles), nil); err != nil {
 		msg := err.Error()
 		if ctx.Err() != nil {
 			msg = fmt.Sprintf("preflight timed out after %s: %s", s.cfg.PreflightTimeout, msg)

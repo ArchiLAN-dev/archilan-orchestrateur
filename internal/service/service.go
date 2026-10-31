@@ -104,7 +104,9 @@ func (s *Service) ReadMultidata(ctx context.Context, archive []byte, filename st
 
 // UploadApworld hashes the binary, stores it in Minio, generates the YAML template via
 // a one-shot Archipelago container, stores the template, and returns both.
-func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, yamlData []byte, err error) {
+//
+// withPartner gives the test generation started here a partner player (story 38.30).
+func (s *Service) UploadApworld(ctx context.Context, data []byte, withPartner bool) (hash string, yamlData []byte, err error) {
 	if s.storage == nil {
 		return "", nil, ErrStorageNotConfigured
 	}
@@ -164,7 +166,7 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte) (hash string, 
 
 	// Solo test generation in background (story 9.38); failure is non-fatal for the upload.
 	go func() {
-		if _, pfErr := s.RunApworldPreflight(context.Background(), hash, nil, ""); pfErr != nil {
+		if _, pfErr := s.RunApworldPreflight(context.Background(), hash, nil, withPartner, ""); pfErr != nil {
 			s.log.Warn("apworld preflight did not complete", "hash", hash, "err", pfErr)
 		}
 	}()

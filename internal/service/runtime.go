@@ -70,6 +70,7 @@ func markPending(p *storage.ApworldPreflight) {
 	p.Image = ""
 	p.ImageID = ""
 	p.WithRequiredFiles = false
+	p.WithPartner = false
 }
 
 // openRun marks the verdict pending for a run that now owns it (review of story 44.6): the last run started
@@ -88,8 +89,16 @@ func ownsRun(p *storage.ApworldPreflight, runID string) bool {
 	return p.RunID == runID
 }
 
-// recordProvidedFiles notes whether a finished test generation was given the file its world reads
-// (story 44.6). A skipped verdict ran nothing.
-func recordProvidedFiles(p *storage.ApworldPreflight, status string, withFiles bool) {
-	p.WithRequiredFiles = withFiles && status != PreflightStatusSkipped
+// verdictInputs is what a test generation was given beyond the template: the file its world reads (story
+// 44.6), a partner player (story 38.30).
+type verdictInputs struct {
+	withFiles   bool
+	withPartner bool
+}
+
+// recordInputs notes what a finished test generation was given. A skipped verdict ran nothing.
+func recordInputs(p *storage.ApworldPreflight, status string, inputs verdictInputs) {
+	ran := status != PreflightStatusSkipped
+	p.WithRequiredFiles = inputs.withFiles && ran
+	p.WithPartner = inputs.withPartner && ran
 }
