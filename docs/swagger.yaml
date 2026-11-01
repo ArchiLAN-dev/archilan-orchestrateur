@@ -55,6 +55,12 @@ definitions:
         type: string
       overridden:
         type: boolean
+      startedAt:
+        description: |-
+          StartedAt: a pending test that left the queue and is generating, since then (story 38.33). Absent while
+          it waits for a container slot, and on a settled verdict.
+        example: "2026-11-01T12:00:00Z"
+        type: string
       status:
         description: pending | passed | failed | skipped
         example: passed

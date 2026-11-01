@@ -60,6 +60,9 @@ type ApworldPreflight struct {
 	RunID string `json:"runId,omitempty"`
 	// PendingWithFiles: the pending run was given files; a run without them does not start meanwhile.
 	PendingWithFiles bool `json:"pendingWithFiles,omitempty"`
+	// StartedAt (RFC3339): when the pending run got its container slot and began generating (story 38.33).
+	// Empty while it waits behind other tests, and once settled.
+	StartedAt string `json:"startedAt,omitempty"`
 }
 
 type ApworldMeta struct {

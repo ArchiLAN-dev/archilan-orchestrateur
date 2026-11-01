@@ -89,6 +89,9 @@ type ApworldPreflight struct {
 	WithRequiredFiles bool `json:"withRequiredFiles,omitempty"`
 	// WithPartner: the test generation had a second player beside the tested one (story 38.30).
 	WithPartner bool `json:"withPartner,omitempty"`
+	// StartedAt: a pending test that left the queue and is generating, since then (story 38.33). Absent while
+	// it waits for a container slot, and on a settled verdict.
+	StartedAt string `json:"startedAt,omitempty" example:"2026-11-01T12:00:00Z"`
 }
 
 // RunApworldPreflightRequest is the optional body of POST /apworlds/{hash}/preflight (story 44.6).

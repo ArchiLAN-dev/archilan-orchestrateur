@@ -42,6 +42,7 @@ func applyVerdict(p *storage.ApworldPreflight, status, errExcerpt, warning strin
 	p.Error = errExcerpt
 	p.Warning = warning
 	p.CheckedAt = checkedAt.UTC().Format(time.RFC3339)
+	p.StartedAt = ""
 	p.Image = rt.APImage
 	p.ImageID = rt.APImageID
 	// The override is a force-allow for a failed verdict (story 38.10). A pass leaves it nothing to
@@ -67,6 +68,7 @@ func markPending(p *storage.ApworldPreflight) {
 	p.Error = ""
 	p.Warning = ""
 	p.CheckedAt = ""
+	p.StartedAt = ""
 	p.Image = ""
 	p.ImageID = ""
 	p.WithRequiredFiles = false
@@ -80,6 +82,16 @@ func openRun(runID string, withFiles bool) func(p *storage.ApworldPreflight) {
 		markPending(p)
 		p.RunID = runID
 		p.PendingWithFiles = withFiles
+	}
+}
+
+// startRun notes that a run left the queue and began generating (story 38.33), if it still owns the pending
+// verdict: an older run that got its slot after a newer one was started says nothing about the current test.
+func startRun(runID string, at time.Time) func(p *storage.ApworldPreflight) {
+	return func(p *storage.ApworldPreflight) {
+		if ownsRun(p, runID) && p.Status == PreflightStatusPending {
+			p.StartedAt = at.UTC().Format(time.RFC3339)
+		}
 	}
 }
 

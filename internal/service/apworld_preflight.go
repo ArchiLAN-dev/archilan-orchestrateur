@@ -117,6 +117,7 @@ func (s *Service) RunApworldPreflight(ctx context.Context, hash string, required
 	// Same container-concurrency budget as the slot preflights (story 9.42 AC6).
 	s.preflightSem <- struct{}{}
 	defer func() { <-s.preflightSem }()
+	s.markRunStarted(ctx, hash, runID)
 
 	genCtx, cancel := context.WithTimeout(ctx, s.cfg.PreflightTimeout)
 	defer cancel()
@@ -188,6 +189,16 @@ func (s *Service) StartApworldPreflight(hash string, requiredFileIDs []string, w
 		}
 	}()
 	return nil
+}
+
+// markRunStarted tells the waiting apart from the generating (story 38.33): the admin sees a test that runs.
+// Only informative: a failure to write it never stops the test.
+func (s *Service) markRunStarted(ctx context.Context, hash, runID string) {
+	s.preflightMetaMu.Lock()
+	defer s.preflightMetaMu.Unlock()
+	if _, err := s.storage.MutateApworldPreflight(ctx, hash, startRun(runID, time.Now())); err != nil {
+		s.log.Warn("failed to mark apworld preflight started", "hash", hash, "err", err)
+	}
 }
 
 // restoreApworldPreflight puts back the verdict a run that could not complete had replaced, if that run still
