@@ -210,3 +210,52 @@ func TestAVerdictWithoutARunIsOwnedByARunWithoutId(t *testing.T) {
 		t.Error("the upload-time run must be able to write the first verdict")
 	}
 }
+
+// Story 38.33: a pending test says whether it is generating or still waiting for a container slot.
+func TestARunThatGetsItsSlotIsMarkedStarted(t *testing.T) {
+	p := storage.ApworldPreflight{}
+	openRun("run-a", false)(&p)
+	if p.StartedAt != "" {
+		t.Fatalf("a run waiting for its slot has not started, got %+v", p)
+	}
+
+	startRun("run-a", time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))(&p)
+
+	if p.StartedAt != "2026-11-01T12:00:00Z" {
+		t.Errorf("expected the start time, got %+v", p)
+	}
+}
+
+func TestAnOlderRunGettingItsSlotLeavesTheNewerOneWaiting(t *testing.T) {
+	p := storage.ApworldPreflight{}
+	openRun("run-a", false)(&p)
+	openRun("run-b", true)(&p)
+
+	startRun("run-a", time.Now())(&p)
+
+	if p.StartedAt != "" {
+		t.Errorf("run-b is the test shown, and it still waits, got %+v", p)
+	}
+}
+
+func TestASettledVerdictForgetsWhenItsRunStarted(t *testing.T) {
+	p := storage.ApworldPreflight{}
+	openRun("", false)(&p)
+	startRun("", time.Now())(&p)
+
+	applyVerdict(&p, PreflightStatusPassed, "", "", time.Now(), RuntimeInfo{})
+
+	if p.StartedAt != "" {
+		t.Errorf("a verdict is no longer running, got %+v", p)
+	}
+}
+
+func TestASettledVerdictIsNeverMarkedStarted(t *testing.T) {
+	p := storage.ApworldPreflight{Status: PreflightStatusFailed}
+
+	startRun("", time.Now())(&p)
+
+	if p.StartedAt != "" {
+		t.Errorf("only a pending verdict can be running, got %+v", p)
+	}
+}

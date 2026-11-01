@@ -215,6 +215,7 @@ func apiPreflight(p *storage.ApworldPreflight) *ApworldPreflight {
 
 		WithRequiredFiles: p.WithRequiredFiles,
 		WithPartner:       p.WithPartner,
+		StartedAt:         p.StartedAt,
 	}
 }
 

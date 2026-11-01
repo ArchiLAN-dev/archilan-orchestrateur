@@ -1917,6 +1917,11 @@ const docTemplate = `{
                 "overridden": {
                     "type": "boolean"
                 },
+                "startedAt": {
+                    "description": "StartedAt: a pending test that left the queue and is generating, since then (story 38.33). Absent while\nit waits for a container slot, and on a settled verdict.",
+                    "type": "string",
+                    "example": "2026-11-01T12:00:00Z"
+                },
                 "status": {
                     "description": "pending | passed | failed | skipped",
                     "type": "string",
