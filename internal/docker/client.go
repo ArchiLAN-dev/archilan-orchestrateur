@@ -106,6 +106,38 @@ type hostConfig struct {
 	RestartPolicy restartPolicy            `json:"RestartPolicy"`
 	Binds         []string                 `json:"Binds"`
 	GroupAdd      []string                 `json:"GroupAdd,omitempty"`
+	containerLimits
+}
+
+// containerLimits is what a session container may not do, whatever runs in it (story 50.2).
+type containerLimits struct {
+	CapDrop     []string `json:"CapDrop,omitempty"`
+	CapAdd      []string `json:"CapAdd,omitempty"`
+	SecurityOpt []string `json:"SecurityOpt,omitempty"`
+	PidsLimit   int64    `json:"PidsLimit,omitempty"`
+}
+
+// sessionPidsLimit bounds a fork bomb, far above what a server and its reachability daemon use.
+const sessionPidsLimit = 1024
+
+// bridgeLimits: the bridge runs as an unprivileged user and needs no capability at all.
+func bridgeLimits() containerLimits {
+	return containerLimits{
+		CapDrop:     []string{"ALL"},
+		SecurityOpt: []string{"no-new-privileges:true"},
+		PidsLimit:   sessionPidsLimit,
+	}
+}
+
+// apServerLimits: the image runs as root over a volume also written by other users, so it keeps
+// the three file capabilities that takes and loses the rest (raw sockets, mounts, setuid...).
+func apServerLimits() containerLimits {
+	return containerLimits{
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"CHOWN", "DAC_OVERRIDE", "FOWNER"},
+		SecurityOpt: []string{"no-new-privileges:true"},
+		PidsLimit:   sessionPidsLimit,
+	}
 }
 
 type portBinding struct {
@@ -198,7 +230,8 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 				fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID),
 				"/var/run/docker.sock:/var/run/docker.sock",
 			},
-			GroupAdd: c.dockerGroupAdd(),
+			GroupAdd:        c.dockerGroupAdd(),
+			containerLimits: bridgeLimits(),
 		},
 		NetworkingConfig: networkingConfig{
 			EndpointsConfig: map[string]struct{}{
@@ -222,6 +255,15 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 	var created createResponse
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		return "", fmt.Errorf("create decode: %w", err)
+	}
+
+	if c.cfg.BridgeCallbackNetwork != "" {
+		if err := c.connectNetwork(ctx, created.ID, c.cfg.BridgeCallbackNetwork); err != nil {
+			// Without it the bridge cannot reach the API, nor the API the bridge: the run would look
+			// healthy and report nothing. Same reasoning as the AP server's proxy network.
+			_ = c.Remove(ctx, created.ID)
+			return "", fmt.Errorf("connect bridge to callback network %q: %w", c.cfg.BridgeCallbackNetwork, err)
+		}
 	}
 
 	return created.ID, nil
@@ -998,6 +1040,7 @@ type apServerHostConfig struct {
 	PortBindings  map[string][]portBinding `json:"PortBindings"`
 	RestartPolicy restartPolicy            `json:"RestartPolicy"`
 	Binds         []string                 `json:"Binds"`
+	containerLimits
 }
 
 // CreateAPServer creates (but does not start) an AP server container for the given session.
@@ -1050,8 +1093,9 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 			// on-failure (not unless-stopped): a clean exit 0 from Archipelago's own
 			// auto_shutdown must leave the container stopped (the session goes idle); only a
 			// real crash (exit != 0) is auto-retried, capped so a crash-loop ends as crashed.
-			RestartPolicy: restartPolicy{Name: "on-failure", MaximumRetryCount: 3},
-			Binds:         []string{fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID)},
+			RestartPolicy:   restartPolicy{Name: "on-failure", MaximumRetryCount: 3},
+			Binds:           []string{fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID)},
+			containerLimits: apServerLimits(),
 		},
 		NetworkingConfig: networkingConfig{
 			EndpointsConfig: map[string]struct{}{

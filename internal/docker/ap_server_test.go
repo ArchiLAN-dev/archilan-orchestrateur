@@ -59,3 +59,21 @@ func TestBridgePortBindingsPublishTheAllocatedPortWhenAsked(t *testing.T) {
 		t.Fatalf("expected host port 25042, got %v", binding)
 	}
 }
+
+// A session container runs code that can come from members: no capability it does not need.
+func TestSessionContainersDropTheirCapabilities(t *testing.T) {
+	for name, limits := range map[string]containerLimits{"bridge": bridgeLimits(), "ap server": apServerLimits()} {
+		if len(limits.CapDrop) != 1 || limits.CapDrop[0] != "ALL" {
+			t.Errorf("%s: CapDrop = %v, want ALL", name, limits.CapDrop)
+		}
+		if len(limits.SecurityOpt) != 1 || limits.SecurityOpt[0] != "no-new-privileges:true" {
+			t.Errorf("%s: SecurityOpt = %v", name, limits.SecurityOpt)
+		}
+		if limits.PidsLimit <= 0 {
+			t.Errorf("%s: no pids limit", name)
+		}
+	}
+	if len(bridgeLimits().CapAdd) != 0 {
+		t.Errorf("bridge: CapAdd = %v, want none", bridgeLimits().CapAdd)
+	}
+}
