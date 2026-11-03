@@ -27,13 +27,13 @@ func NewRouter(cfg *config.Config, svc *service.Service) http.Handler {
 	}))
 
 	r.Get("/health", handleHealth())
-	r.Get("/docs/*", httpSwagger.Handler(
-		httpSwagger.URL("doc.json"),
-	))
 
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware(cfg.APIKey))
 
+		r.Get("/docs/*", httpSwagger.Handler(
+			httpSwagger.URL("doc.json"),
+		))
 		r.Get("/runtime", handleRuntime(svc))
 		r.Get("/runtime/required-files", handleOfficialDeclaredFiles(svc))
 

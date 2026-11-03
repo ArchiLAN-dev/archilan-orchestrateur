@@ -19,6 +19,10 @@ type Config struct {
 	BridgeImage    string
 	BridgeNetwork  string
 	BridgeToken    string
+	// BridgeCallbackNetwork, when set, is the second network of a bridge: the one it shares with the
+	// API, which BridgeNetwork no longer does once sessions have a network of their own. The AP
+	// server never joins it (story 50.2).
+	BridgeCallbackNetwork string
 	// ProxyNetwork is the Docker network shared with the reverse proxy. When set, each AP server
 	// container is also attached to it so Traefik can reach `ap-server-{sessionId}:38281`
 	// directly, without the port ever being published on the host (epic 37).
@@ -91,6 +95,7 @@ func loadFromEnv() *Config {
 		BridgeImage:    env("BRIDGE_IMAGE", "archilan-bridge:latest"),
 		BridgeNetwork:  env("BRIDGE_NETWORK", "archilan_default"),
 		BridgeToken:    envRequired("BRIDGE_TOKEN"),
+		BridgeCallbackNetwork: env("BRIDGE_CALLBACK_NETWORK", ""),
 		ProxyNetwork:   env("PROXY_NETWORK", ""),
 		PublishAPPort:     envBool("AP_PUBLISH_HOST_PORT", true),
 		PublishBridgePort: envBool("BRIDGE_PUBLISH_HOST_PORT", true),
