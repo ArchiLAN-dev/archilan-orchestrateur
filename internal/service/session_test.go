@@ -320,3 +320,44 @@ func TestWithStoredServerOptions_keepsNoRosterForAGeneratedSeed(t *testing.T) {
 		t.Fatalf("roster = %v, want none", got.SlotNames)
 	}
 }
+
+// An imported archive comes from a member, and everything reads the *.apsave of this directory.
+func TestZipToOutputTarDropsSaves(t *testing.T) {
+	var zipBuf bytes.Buffer
+	zw := zip.NewWriter(&zipBuf)
+	for _, name := range []string{"AP_1.archipelago", "forged.apsave", "dir/FORGED.APSAVE"} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip create: %v", err)
+		}
+		if _, err := w.Write([]byte("x")); err != nil {
+			t.Fatalf("zip write: %v", err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+
+	outTar, err := zipToOutputTar(zipBuf.Bytes())
+	if err != nil {
+		t.Fatalf("zipToOutputTar: %v", err)
+	}
+
+	var names []string
+	tr := tar.NewReader(bytes.NewReader(outTar))
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar read: %v", err)
+		}
+		if hdr.Typeflag != tar.TypeDir {
+			names = append(names, hdr.Name)
+		}
+	}
+	if len(names) != 1 || names[0] != "output/AP_1.archipelago" {
+		t.Errorf("tar entries = %v, want only the multidata", names)
+	}
+}
