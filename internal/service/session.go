@@ -420,6 +420,11 @@ func zipToOutputTar(zipData []byte) ([]byte, error) {
 		if f.FileInfo().IsDir() {
 			continue
 		}
+		// A save is the server's own file, never part of an output. The bridge and the AP server
+		// read whatever *.apsave sits in this directory, and an imported archive comes from a member.
+		if strings.HasSuffix(strings.ToLower(f.Name), ".apsave") {
+			continue
+		}
 		rc, err := f.Open()
 		if err != nil {
 			return nil, err
@@ -647,6 +652,8 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 		if err := s.docker.PutDataToVolume(ctx, req.SessionID, bytes.NewReader(outTar)); err != nil {
 			return fmt.Errorf("restore output to volume: %w", err)
 		}
+	} else if strings.HasSuffix(strings.ToLower(filename), ".apsave") {
+		return fmt.Errorf("refusing a save as launch artifact: %s", filename)
 	} else if err := s.docker.InjectFileToVolume(ctx, req.SessionID, filename, fileData); err != nil {
 		return fmt.Errorf("inject file to volume: %w", err)
 	}
