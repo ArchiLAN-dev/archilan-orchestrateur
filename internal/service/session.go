@@ -547,11 +547,9 @@ func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 		return
 	}
 
-	// 3. Wait for AP server to be reachable via its Docker network hostname.
-	// The orchestrateur itself runs in a container, so probing localhost:{apPort}
-	// (the host-mapped port) would fail - probe the internal address instead.
-	apAddr := fmt.Sprintf("ap-server-%s:38281", sessionID)
-	if !s.docker.WaitForAddress(ctx, apAddr, 60*time.Second) {
+	// 3. Wait for the AP server to listen. From inside its container: the orchestrateur is on none
+	// of the session networks.
+	if !s.docker.WaitForPort(ctx, apContainerID, 38281, 60*time.Second) {
 		_ = s.docker.Stop(ctx, apContainerID)
 		_ = s.docker.Remove(ctx, apContainerID)
 		crash("ap server port not reachable within 60s")
@@ -563,7 +561,6 @@ func (s *Service) startSession(req LaunchRequest, bridgePort, apPort int) {
 		SessionID:        sessionID,
 		Port:             bridgePort,
 		BridgeToken:      s.cfg.BridgeToken,
-		APImage:          s.cfg.APImage,
 		ServerPassword:   serverPassword,
 		AdminPassword:    adminPassword,
 		CentralAPIURL:    s.cfg.CentralAPIURL,

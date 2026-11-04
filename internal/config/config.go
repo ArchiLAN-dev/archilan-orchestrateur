@@ -49,7 +49,8 @@ type Config struct {
 	MinioUseSSL         bool
 	MinioBucketApworlds string
 	MinioBucketSessions string
-	DockerGID           string // GID of the docker group on the host (for bridge socket access)
+	// SessionMemoryLimit bounds each session and generation container, in bytes; zero means none.
+	SessionMemoryLimit int64
 
 	GenerationTimeout time.Duration // default 10min
 	LaunchTimeout     time.Duration // default 2min
@@ -111,7 +112,7 @@ func loadFromEnv() *Config {
 		MinioUseSSL:         envBool("MINIO_USE_SSL", false),
 		MinioBucketApworlds: env("MINIO_BUCKET_APWORLDS", "apworlds"),
 		MinioBucketSessions: env("MINIO_BUCKET_SESSIONS", "sessions"),
-		DockerGID:           env("DOCKER_GID", ""),
+		SessionMemoryLimit:  int64(envInt("SESSION_MEMORY_LIMIT_MB", 0)) << 20,
 
 		GenerationTimeout: envDuration("GENERATION_TIMEOUT", 600),
 		LaunchTimeout:     envDuration("LAUNCH_TIMEOUT", 120),
