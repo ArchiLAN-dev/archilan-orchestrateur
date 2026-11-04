@@ -105,7 +105,6 @@ type hostConfig struct {
 	PortBindings  map[string][]portBinding `json:"PortBindings"`
 	RestartPolicy restartPolicy            `json:"RestartPolicy"`
 	Binds         []string                 `json:"Binds"`
-	GroupAdd      []string                 `json:"GroupAdd,omitempty"`
 	containerLimits
 }
 
@@ -115,29 +114,50 @@ type containerLimits struct {
 	CapAdd      []string `json:"CapAdd,omitempty"`
 	SecurityOpt []string `json:"SecurityOpt,omitempty"`
 	PidsLimit   int64    `json:"PidsLimit,omitempty"`
+	// Memory is in bytes; zero leaves the container unbounded (SESSION_MEMORY_LIMIT_MB).
+	Memory int64 `json:"Memory,omitempty"`
 }
 
 // sessionPidsLimit bounds a fork bomb, far above what a server and its reachability daemon use.
 const sessionPidsLimit = 1024
 
 // bridgeLimits: the bridge runs as an unprivileged user and needs no capability at all.
-func bridgeLimits() containerLimits {
+func bridgeLimits(memory int64) containerLimits {
 	return containerLimits{
 		CapDrop:     []string{"ALL"},
 		SecurityOpt: []string{"no-new-privileges:true"},
 		PidsLimit:   sessionPidsLimit,
+		Memory:      memory,
 	}
 }
 
-// apServerLimits: the image runs as root over a volume also written by other users, so it keeps
-// the three file capabilities that takes and loses the rest (raw sockets, mounts, setuid...).
-func apServerLimits() containerLimits {
+// apServerLimits: ap_server.sh starts as root to hand the volume over, then drops to an unprivileged
+// user for good. These capabilities are that first step's, none of them outlives it (story 50.6).
+func apServerLimits(memory int64) containerLimits {
+	return containerLimits{
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"},
+		SecurityOpt: []string{"no-new-privileges:true"},
+		PidsLimit:   sessionPidsLimit,
+		Memory:      memory,
+	}
+}
+
+// oneShotLimits: generation, introspection and tests run world code as root, with no network, over
+// files other users may own: file capabilities only (story 50.6).
+func oneShotLimits(memory int64) containerLimits {
 	return containerLimits{
 		CapDrop:     []string{"ALL"},
 		CapAdd:      []string{"CHOWN", "DAC_OVERRIDE", "FOWNER"},
 		SecurityOpt: []string{"no-new-privileges:true"},
 		PidsLimit:   sessionPidsLimit,
+		Memory:      memory,
 	}
+}
+
+// bridgeBinds is all a bridge mounts: its session volume, never the Docker socket (story 50.6).
+func bridgeBinds(sessionID string) []string {
+	return []string{fmt.Sprintf("archilan_session_%s:/data", sessionID)}
 }
 
 type portBinding struct {
@@ -164,7 +184,6 @@ type CreateConfig struct {
 	SessionID        string
 	Port             int
 	BridgeToken      string
-	APImage          string
 	ServerPassword   string
 	AdminPassword    string
 	CentralAPIURL    string
@@ -201,9 +220,7 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 			fmt.Sprintf("SESSION_ID=%s", cfg.SessionID),
 			fmt.Sprintf("INTERNAL_TOKEN=%s", cfg.BridgeToken),
 			fmt.Sprintf("AP_WS_URL=ws://ap-server-%s:38281", cfg.SessionID),
-			fmt.Sprintf("AP_RUNTIME=docker"),
-			fmt.Sprintf("AP_IMAGE=%s", cfg.APImage),
-			fmt.Sprintf("AP_NETWORK=%s", c.cfg.BridgeNetwork),
+			"AP_RUNTIME=socket",
 			fmt.Sprintf("AP_SERVER_PASSWORD=%s", cfg.ServerPassword),
 			fmt.Sprintf("AP_ADMIN_PASSWORD=%s", cfg.AdminPassword),
 			fmt.Sprintf("CENTRAL_API_URL=%s", cfg.CentralAPIURL),
@@ -224,14 +241,10 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 			// Nil when the API reaches the bridge by container name over the shared network:
 			// nothing is published on the host, and the REST port stops being public (epic 37,
 			// story 37.7).
-			PortBindings:  bridgePortBindings(cfg, c.cfg.PublishBridgePort),
-			RestartPolicy: restartPolicy{Name: "unless-stopped"},
-			Binds: []string{
-				fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID),
-				"/var/run/docker.sock:/var/run/docker.sock",
-			},
-			GroupAdd:        c.dockerGroupAdd(),
-			containerLimits: bridgeLimits(),
+			PortBindings:    bridgePortBindings(cfg, c.cfg.PublishBridgePort),
+			RestartPolicy:   restartPolicy{Name: "unless-stopped"},
+			Binds:           bridgeBinds(cfg.SessionID),
+			containerLimits: bridgeLimits(c.cfg.SessionMemoryLimit),
 		},
 		NetworkingConfig: networkingConfig{
 			EndpointsConfig: map[string]struct{}{
@@ -381,9 +394,10 @@ func (c *Client) Restart(ctx context.Context, containerID string) error {
 // ---------------------------------------------------------------------------
 
 type createOneShotBody struct {
-	Image           string   `json:"Image"`
-	Cmd             []string `json:"Cmd"`
-	NetworkDisabled bool     `json:"NetworkDisabled"`
+	Image           string          `json:"Image"`
+	Cmd             []string        `json:"Cmd"`
+	NetworkDisabled bool            `json:"NetworkDisabled"`
+	HostConfig      containerLimits `json:"HostConfig"`
 }
 
 type waitResponse struct {
@@ -391,7 +405,12 @@ type waitResponse struct {
 }
 
 func (c *Client) createOneShot(ctx context.Context, image string, cmd []string) (string, error) {
-	body := createOneShotBody{Image: image, Cmd: cmd, NetworkDisabled: true}
+	body := createOneShotBody{
+		Image:           image,
+		Cmd:             cmd,
+		NetworkDisabled: true,
+		HostConfig:      oneShotLimits(c.cfg.SessionMemoryLimit),
+	}
 	resp, err := c.do(ctx, http.MethodPost, "/containers/create", body)
 	if err != nil {
 		return "", err
@@ -813,6 +832,7 @@ type createSessionBody struct {
 type sessionHostConfig struct {
 	Binds       []string `json:"Binds"`
 	NetworkMode string   `json:"NetworkMode"`
+	containerLimits
 }
 
 // GenerateOptions carries the optional Archipelago generator options for a generation.
@@ -928,8 +948,9 @@ func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string,
 			managedLabel: "false",
 		},
 		HostConfig: sessionHostConfig{
-			Binds:       []string{fmt.Sprintf("archilan_session_%s:/data", sessionID)},
-			NetworkMode: "none",
+			Binds:           []string{fmt.Sprintf("archilan_session_%s:/data", sessionID)},
+			NetworkMode:     "none",
+			containerLimits: oneShotLimits(c.cfg.SessionMemoryLimit),
 		},
 	}
 
@@ -1095,7 +1116,7 @@ func (c *Client) CreateAPServer(ctx context.Context, cfg APServerCreateConfig) (
 			// real crash (exit != 0) is auto-retried, capped so a crash-loop ends as crashed.
 			RestartPolicy:   restartPolicy{Name: "on-failure", MaximumRetryCount: 3},
 			Binds:           []string{fmt.Sprintf("archilan_session_%s:/data", cfg.SessionID)},
-			containerLimits: apServerLimits(),
+			containerLimits: apServerLimits(c.cfg.SessionMemoryLimit),
 		},
 		NetworkingConfig: networkingConfig{
 			EndpointsConfig: map[string]struct{}{
@@ -1306,22 +1327,98 @@ func (c *Client) CopyOutputDirFromVolume(ctx context.Context, sessionID string) 
 	return io.ReadAll(archiveResp.Body)
 }
 
-// WaitForAddress probes addr via TCP every 2 seconds until it succeeds or timeout elapses.
-func (c *Client) WaitForAddress(ctx context.Context, addr string, timeout time.Duration) bool {
+// probeInterval paces the readiness probes of a starting container.
+const probeInterval = 2 * time.Second
+
+// WaitForPort waits until something listens on port inside the container. The probe runs in the
+// container because the orchestrateur holds the Docker socket and so shares no network with session
+// containers (story 50.2). Unprivileged and in isolated mode: the working directory of a server can
+// hold files written by a world.
+func (c *Client) WaitForPort(ctx context.Context, containerID string, port int, timeout time.Duration) bool {
+	probe := []string{
+		"python", "-I", "-c",
+		fmt.Sprintf("import socket; socket.create_connection(('127.0.0.1', %d), 1)", port),
+	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-		if err == nil {
-			conn.Close()
+		exitCode, err := c.execExitCode(ctx, containerID, probe)
+		if err == nil && exitCode == 0 {
 			return true
 		}
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(2 * time.Second):
+		case <-time.After(probeInterval):
 		}
 	}
 	return false
+}
+
+type execCreateBody struct {
+	Cmd  []string `json:"Cmd"`
+	User string   `json:"User"`
+}
+
+type execInspect struct {
+	Running  bool `json:"Running"`
+	ExitCode int  `json:"ExitCode"`
+}
+
+// execExitCode runs cmd in a running container and returns its exit code.
+func (c *Client) execExitCode(ctx context.Context, containerID string, cmd []string) (int, error) {
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/containers/%s/exec", containerID), execCreateBody{Cmd: cmd, User: "1000:1000"})
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		raw, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("exec create: status %d: %s", resp.StatusCode, raw)
+	}
+	var created createResponse
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return 0, fmt.Errorf("exec create decode: %w", err)
+	}
+
+	started, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/exec/%s/start", created.ID), map[string]bool{"Detach": true})
+	if err != nil {
+		return 0, err
+	}
+	defer started.Body.Close()
+	if started.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(started.Body)
+		return 0, fmt.Errorf("exec start: status %d: %s", started.StatusCode, raw)
+	}
+
+	for {
+		state, err := c.inspectExec(ctx, created.ID)
+		if err != nil {
+			return 0, err
+		}
+		if !state.Running {
+			return state.ExitCode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (c *Client) inspectExec(ctx context.Context, execID string) (execInspect, error) {
+	var state execInspect
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/exec/%s/json", execID), nil)
+	if err != nil {
+		return state, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return state, fmt.Errorf("exec inspect: status %d: %s", resp.StatusCode, raw)
+	}
+	err = json.NewDecoder(resp.Body).Decode(&state)
+	return state, err
 }
 
 // ---------------------------------------------------------------------------
@@ -1375,14 +1472,4 @@ func (c *Client) WatchEvents(ctx context.Context) (<-chan Event, <-chan error) {
 	}()
 
 	return out, errc
-}
-
-// dockerGroupAdd returns the GroupAdd slice to pass to bridge containers.
-// If DOCKER_GID is set, it uses that GID so the bridge can access /var/run/docker.sock.
-// Falls back to "0" (root group) for backwards compatibility.
-func (c *Client) dockerGroupAdd() []string {
-	if c.cfg.DockerGID != "" {
-		return []string{c.cfg.DockerGID}
-	}
-	return []string{"0"}
 }

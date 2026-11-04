@@ -530,7 +530,6 @@ func (s *Service) startContainer(sessionID string, port int, serverPassword, adm
 		SessionID:      sessionID,
 		Port:           port,
 		BridgeToken:    s.cfg.BridgeToken,
-		APImage:        s.cfg.APImage,
 		ServerPassword: serverPassword,
 		AdminPassword:  adminPassword,
 	})
