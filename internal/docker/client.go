@@ -212,6 +212,19 @@ func marshalSlotNames(slots []SlotName) string {
 	return string(raw)
 }
 
+// bridgeErrorReportingEnv is what a bridge needs to report its errors to Bugsink (story 33.32): nothing without
+// a DSN, so a bridge sends nothing unless the orchestrateur is configured for it. The release is the image tag.
+func bridgeErrorReportingEnv(dsn, image string) []string {
+	if strings.TrimSpace(dsn) == "" {
+		return nil
+	}
+	env := []string{"SENTRY_DSN=" + dsn}
+	if i := strings.LastIndex(image, ":"); i >= 0 && !strings.Contains(image[i+1:], "/") && image[i+1:] != "" {
+		env = append(env, "SENTRY_RELEASE="+image[i+1:])
+	}
+	return env
+}
+
 // Create creates a container but does not start it.
 func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 	body := createBody{
@@ -252,6 +265,7 @@ func (c *Client) Create(ctx context.Context, cfg CreateConfig) (string, error) {
 			},
 		},
 	}
+	body.Env = append(body.Env, bridgeErrorReportingEnv(c.cfg.BridgeSentryDSN, c.cfg.BridgeImage)...)
 
 	name := fmt.Sprintf("archilan-bridge-%s", cfg.SessionID)
 	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/containers/create?name=%s", name), body)
