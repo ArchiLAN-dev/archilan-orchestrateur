@@ -42,6 +42,8 @@ type Config struct {
 	WebhookSecret  string
 	CentralAPIURL    string
 	CentralAPISecret string
+	// BridgeSentryDSN, when set, makes each bridge report its errors to Bugsink (story 33.32).
+	BridgeSentryDSN string
 	CORSOrigins    []string
 	MinioEndpoint       string
 	MinioAccessKey      string
@@ -105,6 +107,7 @@ func loadFromEnv() *Config {
 		WebhookSecret:  env("WEBHOOK_SECRET", ""),
 		CentralAPIURL:    env("CENTRAL_API_URL", ""),
 		CentralAPISecret: env("CENTRAL_API_SECRET", ""),
+		BridgeSentryDSN:  env("BRIDGE_SENTRY_DSN", ""),
 		CORSOrigins:    envList("CORS_ORIGINS", []string{"*"}),
 		MinioEndpoint:       env("MINIO_ENDPOINT", ""),
 		MinioAccessKey:      env("MINIO_ACCESS_KEY", ""),
