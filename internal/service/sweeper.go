@@ -110,6 +110,9 @@ func (s *Service) sweepRunning(ctx context.Context) {
 			continue // inspect error, skip
 		}
 		if info == nil || !info.Running {
+			if s.stoppedOnPurpose(sess.SessionID) {
+				continue
+			}
 			switch apExitOutcome(info) {
 			case outcomeIdle:
 				s.idleFromAutoShutdown(ctx, sess)
@@ -118,6 +121,28 @@ func (s *Service) sweepRunning(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// beginStop marks a session as being stopped or deleted; the returned func clears the mark. Deferred by the stop,
+// it clears it once the record says stopped (or is gone).
+func (s *Service) beginStop(sessionID string) func() {
+	s.stopping.Store(sessionID, struct{}{})
+	return func() { s.stopping.Delete(sessionID) }
+}
+
+// stoppedOnPurpose tells whether an AP server the sweeper found down was taken down by a stop or a delete, not by
+// a crash: a stop is under way, or one finished since the sweeper listed the running sessions. Without it, a stop
+// of a few seconds (a finished game the API stops) was reported as a crash, refused by the API, and kept a port
+// reserved for a relaunch that never comes.
+func (s *Service) stoppedOnPurpose(sessionID string) bool {
+	if _, ok := s.stopping.Load(sessionID); ok {
+		return true
+	}
+	sess, err := s.db.GetSession(sessionID)
+	if err != nil {
+		return false
+	}
+	return sess == nil || sess.Status != "running"
 }
 
 const (

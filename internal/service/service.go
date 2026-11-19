@@ -63,6 +63,10 @@ type Service struct {
 	declaredLister declaredFilesLister
 	officialFiles  officialDeclaredFiles
 
+	// stopping holds the sessions a stop or a delete is taking down: their AP server exits on purpose, and the
+	// sweeper must not read that as a crash or an auto_shutdown.
+	stopping sync.Map
+
 	// Session volumes and the saves copied off them (story 17.37). saves is nil without MinIO.
 	volumes           sessionVolumes
 	saves             sessionSaves

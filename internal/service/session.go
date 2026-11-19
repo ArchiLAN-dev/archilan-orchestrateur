@@ -711,6 +711,8 @@ func (s *Service) stopSession(ctx context.Context, sessionID string, keepReserva
 	if sess == nil {
 		return ErrNotFound
 	}
+	// Until the record says stopped: stopping both containers takes several seconds.
+	defer s.beginStop(sessionID)()
 
 	if sess.BridgeContainerID != nil {
 		_ = s.docker.Stop(ctx, *sess.BridgeContainerID)
@@ -753,6 +755,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	if sess == nil {
 		return ErrNotFound
 	}
+	defer s.beginStop(sessionID)()
 
 	if sess.BridgeContainerID != nil {
 		_ = s.docker.Remove(ctx, *sess.BridgeContainerID)
