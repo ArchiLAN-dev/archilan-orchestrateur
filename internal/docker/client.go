@@ -7,12 +7,14 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -1296,6 +1298,55 @@ func (c *Client) PutDataToVolume(ctx context.Context, sessionID string, tarData 
 // volume as a tar archive (entries prefixed with "output/"). Used to persist every
 // generated file (multidata, per-player patches, spoiler), not just one.
 func (c *Client) CopyOutputDirFromVolume(ctx context.Context, sessionID string) ([]byte, error) {
+	var data []byte
+	err := c.readOutputDir(ctx, sessionID, func(r io.Reader) error {
+		var err error
+		data, err = io.ReadAll(r)
+		return err
+	})
+	return data, err
+}
+
+// LatestSaveFromVolume returns the most recent *.apsave of the session volume's /data/output (story 17.37). The
+// directory is streamed and only the save kept: the patches of a large game weigh hundreds of megabytes.
+func (c *Client) LatestSaveFromVolume(ctx context.Context, sessionID string) (name string, data []byte, found bool, err error) {
+	err = c.readOutputDir(ctx, sessionID, func(r io.Reader) error {
+		var err error
+		name, data, found, err = LatestSaveFromTar(r)
+		return err
+	})
+	return name, data, found, err
+}
+
+// LatestSaveFromTar returns the most recent *.apsave of a tar of /data/output, reading the rest without keeping it.
+func LatestSaveFromTar(r io.Reader) (name string, data []byte, found bool, err error) {
+	tr := tar.NewReader(r)
+	var newest time.Time
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return name, data, found, nil
+		}
+		if err != nil {
+			return "", nil, false, fmt.Errorf("read output tar: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg || !strings.HasSuffix(strings.ToLower(hdr.Name), ".apsave") {
+			continue
+		}
+		if found && !hdr.ModTime.After(newest) {
+			continue
+		}
+		body, err := io.ReadAll(tr)
+		if err != nil {
+			return "", nil, false, fmt.Errorf("read save: %w", err)
+		}
+		name, data, found, newest = path.Base(hdr.Name), body, true, hdr.ModTime
+	}
+}
+
+// readOutputDir hands read the /data/output directory of the session volume as a tar stream, through a stopped
+// one-shot container that mounts the volume.
+func (c *Client) readOutputDir(ctx context.Context, sessionID string, read func(io.Reader) error) error {
 	type copyBody struct {
 		Image      string            `json:"Image"`
 		Labels     map[string]string `json:"Labels"`
@@ -1312,17 +1363,17 @@ func (c *Client) CopyOutputDirFromVolume(ctx context.Context, sessionID string) 
 
 	resp, err := c.do(ctx, http.MethodPost, "/containers/create", body)
 	if err != nil {
-		return nil, fmt.Errorf("copy output dir create: %w", err)
+		return fmt.Errorf("copy output dir create: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("copy output dir create: status %d: %s", resp.StatusCode, raw)
+		return fmt.Errorf("copy output dir create: status %d: %s", resp.StatusCode, raw)
 	}
 
 	var created createResponse
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		return nil, fmt.Errorf("copy output dir decode: %w", err)
+		return fmt.Errorf("copy output dir decode: %w", err)
 	}
 	containerID := created.ID
 	defer func() { _ = c.Remove(ctx, containerID) }()
@@ -1330,15 +1381,15 @@ func (c *Client) CopyOutputDirFromVolume(ctx context.Context, sessionID string) 
 	archiveResp, err := c.do(ctx, http.MethodGet,
 		fmt.Sprintf("/containers/%s/archive?path=%s", containerID, url.QueryEscape("/data/output")), nil)
 	if err != nil {
-		return nil, fmt.Errorf("copy output dir archive: %w", err)
+		return fmt.Errorf("copy output dir archive: %w", err)
 	}
 	defer archiveResp.Body.Close()
 	if archiveResp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(archiveResp.Body)
-		return nil, fmt.Errorf("copy output dir archive: status %d: %s", archiveResp.StatusCode, raw)
+		return fmt.Errorf("copy output dir archive: status %d: %s", archiveResp.StatusCode, raw)
 	}
 
-	return io.ReadAll(archiveResp.Body)
+	return read(archiveResp.Body)
 }
 
 // probeInterval paces the readiness probes of a starting container.
@@ -1486,4 +1537,64 @@ func (c *Client) WatchEvents(ctx context.Context) (<-chan Event, <-chan error) {
 	}()
 
 	return out, errc
+}
+
+// sessionVolumePrefix names every session volume: archilan_session_<sessionId>.
+const sessionVolumePrefix = "archilan_session_"
+
+// VolumeExists reports whether the session's data volume exists. Reading it never creates it, unlike any
+// container that mounts it.
+func (c *Client) VolumeExists(ctx context.Context, sessionID string) (bool, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/volumes/"+sessionVolumePrefix+sessionID, nil)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	return false, fmt.Errorf("inspect volume: status %d: %s", resp.StatusCode, raw)
+}
+
+// ListSessionVolumes returns the session ids of every archilan_session_<id> volume on the host.
+func (c *Client) ListSessionVolumes(ctx context.Context) ([]string, error) {
+	filters := url.QueryEscape(`{"name":["` + sessionVolumePrefix + `"]}`)
+	resp, err := c.do(ctx, http.MethodGet, "/volumes?filters="+filters, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list volumes: status %d: %s", resp.StatusCode, raw)
+	}
+	var body struct {
+		Volumes []struct {
+			Name string `json:"Name"`
+		} `json:"Volumes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("list volumes decode: %w", err)
+	}
+	return sessionIDsFromVolumes(body.Volumes), nil
+}
+
+// sessionIDsFromVolumes keeps the volumes named exactly archilan_session_<id>: Docker's name filter matches a
+// substring, so another project's archilan_session_x_backup would also come back.
+func sessionIDsFromVolumes(volumes []struct {
+	Name string `json:"Name"`
+}) []string {
+	ids := []string{}
+	for _, v := range volumes {
+		id, ok := strings.CutPrefix(v.Name, sessionVolumePrefix)
+		if !ok || id == "" || strings.ContainsAny(id, "_/.") {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }

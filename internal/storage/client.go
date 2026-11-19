@@ -320,3 +320,68 @@ func isNotFound(err error) bool {
 	resp := minio.ToErrorResponse(err)
 	return resp.Code == "NoSuchKey" || resp.StatusCode == 404
 }
+
+// sessionSaveKey is where a session's Archipelago save lives once copied off its volume (story 17.37). A single
+// object per session, overwritten at each copy: only the latest save resumes a game.
+func sessionSaveKey(sessionID string) string {
+	return sessionID + "/save/latest.apsave"
+}
+
+// saveFilenameMeta keeps the save's own filename (MultiServer looks for `<multidata>.apsave`) next to the object.
+const saveFilenameMeta = "Filename"
+
+// UploadSessionSave stores the latest Archipelago save of a session, with its original filename.
+func (c *Client) UploadSessionSave(ctx context.Context, sessionID, filename string, data []byte) error {
+	_, err := c.mc.PutObject(ctx, c.cfg.BucketSessions, sessionSaveKey(sessionID),
+		bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{
+			ContentType:  "application/octet-stream",
+			UserMetadata: map[string]string{saveFilenameMeta: filename},
+		})
+	return err
+}
+
+// DownloadSessionSave returns the stored save of a session and its original filename ("" when unknown, e.g. a
+// save imported by hand). found is false when the session has no stored save.
+func (c *Client) DownloadSessionSave(ctx context.Context, sessionID string) (filename string, data []byte, found bool, err error) {
+	obj, err := c.mc.GetObject(ctx, c.cfg.BucketSessions, sessionSaveKey(sessionID), minio.GetObjectOptions{})
+	if err != nil {
+		if isNotFound(err) {
+			return "", nil, false, nil
+		}
+		return "", nil, false, err
+	}
+	defer obj.Close()
+	info, err := obj.Stat()
+	if err != nil {
+		if isNotFound(err) {
+			return "", nil, false, nil
+		}
+		return "", nil, false, err
+	}
+	data, err = io.ReadAll(obj)
+	if err != nil {
+		return "", nil, false, err
+	}
+	return info.UserMetadata[saveFilenameMeta], data, true, nil
+}
+
+// DownloadSessionOutput returns a generated output stored by UploadSessionOutput. found is false when absent.
+func (c *Client) DownloadSessionOutput(ctx context.Context, sessionID, filename string) (data []byte, found bool, err error) {
+	obj, err := c.mc.GetObject(ctx, c.cfg.BucketSessions, sessionID+"/output/"+filename, minio.GetObjectOptions{})
+	if err != nil {
+		if isNotFound(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	defer obj.Close()
+	data, err = io.ReadAll(obj)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return data, true, nil
+}

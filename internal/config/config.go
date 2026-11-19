@@ -64,6 +64,11 @@ type Config struct {
 	PortReservationTTL time.Duration
 	// RequiredFilesMaxBytes caps the files held in memory for their generation (story 44.2).
 	RequiredFilesMaxBytes int64
+	// SessionVolumeRetention: how long a stopped session keeps its volume before it is removed, its save copied
+	// to MinIO first; a relaunch rebuilds it (story 17.37). Default 7 days; 0 keeps every volume.
+	SessionVolumeRetention time.Duration
+	// VolumeCollectInterval paces the volume collection run by the sweeper. Default 1 hour.
+	VolumeCollectInterval time.Duration
 }
 
 func Load() *Config {
@@ -124,6 +129,8 @@ func loadFromEnv() *Config {
 		PreflightMaxConcurrent: envInt("PREFLIGHT_MAX_CONCURRENT", 2),
 		PortReservationTTL:     envDuration("PORT_RESERVATION_TTL", 14*24*3600),
 		RequiredFilesMaxBytes:  int64(envInt("REQUIRED_FILES_MAX_MB", 512)) << 20,
+		SessionVolumeRetention: envDuration("SESSION_VOLUME_RETENTION", 7*24*3600),
+		VolumeCollectInterval:  envDuration("VOLUME_COLLECT_INTERVAL", 3600),
 	}
 }
 
