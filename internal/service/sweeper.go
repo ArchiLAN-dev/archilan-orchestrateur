@@ -29,6 +29,7 @@ func (s *Service) sweep(ctx context.Context) {
 	s.sweepTransit(ctx)
 	s.sweepRunning(ctx)
 	s.expirePortReservations(time.Now().UTC())
+	s.collectVolumesIfDue(ctx, time.Now().UTC())
 	if s.requiredFiles != nil {
 		s.requiredFiles.prune(time.Now())
 	}
@@ -145,8 +146,10 @@ func (s *Service) idleFromAutoShutdown(ctx context.Context, sess *db.Session) {
 		_ = s.docker.Stop(ctx, *sess.BridgeContainerID)
 	}
 	// Remove the idle containers (the AP already exited) but keep the volume - its .apsave is
-	// what relaunch-from-save resumes from.
+	// what relaunch-from-save resumes from. The save is copied to storage too, so the volume can go once
+	// unused past the retention (story 17.37).
 	s.removeSessionContainers(ctx, sess)
+	s.archiveSaveBestEffort(ctx, sess.SessionID)
 	s.reservePort(sess, time.Now().UTC())
 	_ = s.db.UpdateSessionStopped(sess.SessionID)
 	s.webhook.Send(ctx, webhook.Payload{

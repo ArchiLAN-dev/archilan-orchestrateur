@@ -62,6 +62,11 @@ type Service struct {
 	// The files the image's own worlds declare, listed once per image (story 44.3).
 	declaredLister declaredFilesLister
 	officialFiles  officialDeclaredFiles
+
+	// Session volumes and the saves copied off them (story 17.37). saves is nil without MinIO.
+	volumes           sessionVolumes
+	saves             sessionSaves
+	lastVolumeCollect time.Time
 }
 
 func New(
@@ -78,7 +83,7 @@ func New(
 		maxConcurrent = 1
 	}
 
-	return &Service{
+	svc := &Service{
 		db:         database,
 		docker:     dockerClient,
 		pool:       pool,
@@ -94,7 +99,13 @@ func New(
 		slotPreflights: map[string]*SlotPreflight{},
 		requiredFiles:  newRequiredFileStore(cfg.RequiredFilesMaxBytes),
 		declaredLister: dockerClient,
+		volumes:        dockerClient,
 	}
+	// Assigned only when set: a nil *storage.Client in the interface would not compare to nil.
+	if storageCl != nil {
+		svc.saves = storageCl
+	}
+	return svc
 }
 
 // ReadMultidata reads the slot table of a pre-generated output archive (story 16.18).

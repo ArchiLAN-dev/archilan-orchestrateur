@@ -623,6 +623,17 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 		}
 	}
 
+	// A relaunch of a session whose volume was removed (story 17.37) gets its save back below: staging creates
+	// the volume, so look first.
+	volumeMissing := false
+	if existing != nil && s.volumes != nil {
+		exists, err := s.volumes.VolumeExists(ctx, req.SessionID)
+		if err != nil {
+			return fmt.Errorf("check volume: %w", err)
+		}
+		volumeMissing = !exists
+	}
+
 	// Stage the session's yamls + worlds from MinIO into the volume so downstream
 	// tooling that rebuilds the world (reachability) finds /data/yamls and /data/worlds.
 	// The provided file is the pre-generated multidata - no generation is run here.
@@ -653,6 +664,11 @@ func (s *Service) LaunchFromFile(ctx context.Context, req LaunchRequest, fileDat
 		return fmt.Errorf("refusing a save as launch artifact: %s", filename)
 	} else if err := s.docker.InjectFileToVolume(ctx, req.SessionID, filename, fileData); err != nil {
 		return fmt.Errorf("inject file to volume: %w", err)
+	}
+	if volumeMissing && s.saves != nil {
+		if err := s.restoreSave(ctx, req.SessionID, fileData); err != nil {
+			return err
+		}
 	}
 
 	if err := s.db.UpdateSessionGenerated(req.SessionID, filename); err != nil {
@@ -702,8 +718,10 @@ func (s *Service) stopSession(ctx context.Context, sessionID string, keepReserva
 	if sess.APContainerID != nil {
 		_ = s.docker.Stop(ctx, *sess.APContainerID)
 	}
-	// Remove the now-stopped containers (keep the volume so the session stays resumable).
+	// Remove the now-stopped containers (keep the volume so the session stays resumable), and copy the save to
+	// storage: the volume goes once unused past the retention, the save stays (story 17.37).
 	s.removeSessionContainers(ctx, sess)
+	s.archiveSaveBestEffort(ctx, sessionID)
 	if sess.BridgePort != nil {
 		// Owner-guarded: StopSession also runs as best-effort cleanup inside RestartSession on an
 		// already-crashed session, whose port was released on crash and may have been re-Acquired
@@ -740,6 +758,8 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		_ = s.docker.Remove(ctx, *sess.BridgeContainerID)
 	}
 	_ = s.docker.RemoveAPServer(ctx, sessionID)
+	// The save outlives the volume (story 17.37): a deleted weekly's still downloads.
+	s.archiveSaveBestEffort(ctx, sessionID)
 	_ = s.docker.RemoveVolume(ctx, sessionID)
 
 	// Owner-guarded release replaces a status-string guard: a stale bridge_port may now belong to
@@ -784,6 +804,9 @@ func (s *Service) RestartSession(ctx context.Context, sessionID string) error {
 
 	// Best-effort cleanup, keeping the port the crash reserved for this restart (story 17.27).
 	_ = s.stopSession(ctx, sessionID, true)
+	if err := s.restoreVolumeIfMissing(ctx, sessionID); err != nil {
+		return fmt.Errorf("restore volume: %w", err)
+	}
 
 	serverPassword := ""
 	if sess.ServerPassword != nil {
@@ -830,6 +853,11 @@ func (s *Service) RelaunchFromSave(ctx context.Context, sessionID string) error 
 	}
 	if sess.OutputFile == nil {
 		return ErrSessionNotReady
+	}
+
+	// A volume removed after the retention is rebuilt from storage, save included (story 17.37).
+	if err := s.restoreVolumeIfMissing(ctx, sessionID); err != nil {
+		return fmt.Errorf("restore volume: %w", err)
 	}
 
 	// Force-remove any leftover (stopped) AP container so CreateAPServer can reuse the name.
