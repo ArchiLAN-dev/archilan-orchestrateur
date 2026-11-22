@@ -519,7 +519,7 @@ func handleGetSlotPreflight(svc *service.Service) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "preflight job not found")
 			return
 		}
-		writeJSON(w, http.StatusOK, SlotPreflightResponse{ID: id, Status: job.Status, Error: job.Error})
+		writeJSON(w, http.StatusOK, SlotPreflightResponse{ID: id, Status: job.Status, Error: job.Error, Measures: job.Measures})
 	}
 }
 

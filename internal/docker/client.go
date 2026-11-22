@@ -741,11 +741,18 @@ func (c *Client) GenerateTemplate(ctx context.Context, apworldData []byte, hash 
 // partnerYaml, when not empty, is a second player generated beside the tested one (story 38.30): a meta-game
 // such as Tombola cannot place its progression in its own world, so it cannot generate solo.
 func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash string, playerYaml []byte, requiredFiles []RequiredFile, partnerYaml []byte) (string, string, error) {
+	imageID, warnings, _, err := c.PreflightGenerateMeasured(ctx, apworldData, hash, playerYaml, requiredFiles, partnerYaml)
+	return imageID, warnings, err
+}
+
+// PreflightGenerateMeasured is PreflightGenerate plus the slot measures the generator prints for its own
+// output (story 56.1): raw JSON, nil when the line is missing (an older image) or unreadable.
+func (c *Client) PreflightGenerateMeasured(ctx context.Context, apworldData []byte, hash string, playerYaml []byte, requiredFiles []RequiredFile, partnerYaml []byte) (string, string, json.RawMessage, error) {
 	tarBuf := preflightTar(apworldData, hash, playerYaml, partnerYaml)
 
 	containerID, err := c.createOneShot(ctx, c.cfg.APImage, preflightCommand(requiredFiles))
 	if err != nil {
-		return "", "", fmt.Errorf("create preflight container: %w", err)
+		return "", "", nil, fmt.Errorf("create preflight container: %w", err)
 	}
 	defer func() { _ = c.Remove(context.WithoutCancel(ctx), containerID) }()
 
@@ -755,35 +762,35 @@ func (c *Client) PreflightGenerate(ctx context.Context, apworldData []byte, hash
 	}
 
 	if err := c.putArchiveTo(ctx, containerID, "/tmp", tarBuf); err != nil {
-		return imageID, "", fmt.Errorf("copy apworld to preflight container: %w", err)
+		return imageID, "", nil, fmt.Errorf("copy apworld to preflight container: %w", err)
 	}
 	if len(requiredFiles) > 0 {
 		filesTar, err := requiredFilesTar(requiredFiles)
 		if err != nil {
-			return imageID, "", fmt.Errorf("preflight required files: %w", err)
+			return imageID, "", nil, fmt.Errorf("preflight required files: %w", err)
 		}
 		if err := c.putArchiveTo(ctx, containerID, "/tmp", filesTar); err != nil {
-			return imageID, "", fmt.Errorf("copy required files to preflight container: %w", err)
+			return imageID, "", nil, fmt.Errorf("copy required files to preflight container: %w", err)
 		}
 	}
 
 	if err := c.startContainer(ctx, containerID); err != nil {
-		return imageID, "", fmt.Errorf("start preflight container: %w", err)
+		return imageID, "", nil, fmt.Errorf("start preflight container: %w", err)
 	}
 
 	exitCode, err := c.waitContainer(ctx, containerID)
 	if err != nil {
-		return imageID, "", fmt.Errorf("wait for preflight container: %w", err)
+		return imageID, "", nil, fmt.Errorf("wait for preflight container: %w", err)
 	}
 
 	stderr, logsErr := c.containerLogs(ctx, containerID, false, true)
 	if exitCode != 0 {
-		return imageID, "", fmt.Errorf("preflight generation exited %d: %s", exitCode, bytes.TrimSpace(stderr))
+		return imageID, "", nil, fmt.Errorf("preflight generation exited %d: %s", exitCode, bytes.TrimSpace(stderr))
 	}
 	if logsErr != nil {
 		c.log.Warn("could not read the logs of a passed preflight", "container", containerID, "err", logsErr)
 	}
-	return imageID, generationWarnings(stderr), nil
+	return imageID, generationWarnings(stderr), generationMeasures(stderr), nil
 }
 
 // preflightTar is what a test generation's container finds under /tmp: the apworld when there is one, the
