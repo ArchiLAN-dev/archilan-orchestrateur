@@ -1,5 +1,7 @@
 package api
 
+import "encoding/json"
+
 import "archilan.fr/orchestrateur/internal/service"
 
 // ContainerResponse represents a managed Bridge container.
@@ -150,6 +152,8 @@ type SlotPreflightResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status" example:"pending"` // pending | passed | failed
 	Error  string `json:"error,omitempty"`
+	// Measures of a passed test (story 56.1): [{slot, name, game, locations, ownProgression, hostedProgression}].
+	Measures json.RawMessage `json:"measures,omitempty" swaggertype:"array,object"`
 }
 
 // ApworldOptionsResponse is returned by GET /apworlds/{hash}/options.
@@ -171,7 +175,7 @@ type DeclaredFilesResponse struct {
 
 // OfficialDeclaredFilesResponse is returned by GET /runtime/required-files (story 44.3).
 type OfficialDeclaredFilesResponse struct {
-	Image string                             `json:"image"`
+	Image string                            `json:"image"`
 	Games map[string][]service.DeclaredFile `json:"games"`
 }
 

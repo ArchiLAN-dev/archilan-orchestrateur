@@ -35,3 +35,25 @@ func generationWarnings(stderr []byte) string {
 	}
 	return strings.Join(messages, "\n")
 }
+
+// generationMeasuresSentinel opens the line carrying the slot measures of a generation's output (story 56.1).
+const generationMeasuresSentinel = "###ARCHILAN-MEASURES###"
+
+// generationMeasures returns the JSON array of slot measures printed on stderr, or nil when there is none or it
+// is not valid JSON. Passed through as is: the API reads the fields it knows.
+func generationMeasures(stderr []byte) json.RawMessage {
+	scanner := bufio.NewScanner(bytes.NewReader(stderr))
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	var found json.RawMessage
+	for scanner.Scan() {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(scanner.Text()), generationMeasuresSentinel)
+		if !ok {
+			continue
+		}
+		rest = strings.TrimSpace(rest)
+		if json.Valid([]byte(rest)) && strings.HasPrefix(rest, "[") {
+			found = json.RawMessage(rest)
+		}
+	}
+	return found
+}

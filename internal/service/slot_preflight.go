@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -26,6 +27,9 @@ type SlotPreflight struct {
 	Status    string
 	Error     string
 	CreatedAt time.Time
+	// Measures: size and progression counts of each slot of a passed test (story 56.1), raw JSON from the
+	// generator; nil when the image does not report them.
+	Measures json.RawMessage
 }
 
 // StartSlotPreflight queues a solo test generation for the given player YAML (story 9.42).
@@ -96,7 +100,8 @@ func (s *Service) runSlotPreflight(id string, playerYaml []byte, apworldHash str
 		apworldData = data
 	}
 
-	if _, _, err := s.docker.PreflightGenerate(ctx, apworldData, apworldHash, playerYaml, dockerRequiredFiles(requiredFiles), nil); err != nil {
+	_, _, measures, err := s.docker.PreflightGenerateMeasured(ctx, apworldData, apworldHash, playerYaml, dockerRequiredFiles(requiredFiles), nil)
+	if err != nil {
 		msg := err.Error()
 		if ctx.Err() != nil {
 			msg = fmt.Sprintf("preflight timed out after %s: %s", s.cfg.PreflightTimeout, msg)
@@ -106,6 +111,11 @@ func (s *Service) runSlotPreflight(id string, playerYaml []byte, apworldHash str
 	}
 
 	s.finishSlotPreflight(id, SlotPreflightPassed, "")
+	s.slotPreflightMu.Lock()
+	if job, ok := s.slotPreflights[id]; ok {
+		job.Measures = measures
+	}
+	s.slotPreflightMu.Unlock()
 }
 
 func (s *Service) finishSlotPreflight(id, status, errText string) {
