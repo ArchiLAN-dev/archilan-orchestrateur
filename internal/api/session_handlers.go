@@ -151,6 +151,8 @@ func handleGenerateSession(svc *service.Service) http.HandlerFunc {
 			PlandoOptions: req.PlandoOptions,
 			Race:          req.Race,
 			Spoiler:       req.Spoiler,
+			// Story 56.6: off unless the API asks.
+			ProgressionCap: req.ProgressionCap,
 			// Story 44.2: the staged files this generation consumes.
 			RequiredFileIDs: req.RequiredFileIDs,
 		})

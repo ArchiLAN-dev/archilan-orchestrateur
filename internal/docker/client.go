@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -849,6 +850,7 @@ type createSessionBody struct {
 	Image      string            `json:"Image"`
 	Cmd        []string          `json:"Cmd"`
 	Labels     map[string]string `json:"Labels"`
+	Env        []string          `json:"Env,omitempty"`
 	HostConfig sessionHostConfig `json:"HostConfig"`
 }
 
@@ -867,6 +869,16 @@ type GenerateOptions struct {
 	Spoiler       *int     // --spoiler N (0..3)
 	// RequiredFiles: the files the launcher provided for this generation only (story 44.2).
 	RequiredFiles []RequiredFile
+	// ProgressionCap: k of the image's cap on the progression a giant world hosts (story 56.6); nil = off.
+	ProgressionCap *float64
+}
+
+// generateEnv is the generation container's environment: the progression cap when asked (story 56.6).
+func generateEnv(opts GenerateOptions) []string {
+	if opts.ProgressionCap == nil {
+		return nil
+	}
+	return []string{fmt.Sprintf("ARCHILAN_PROGRESSION_CAP=%s", strconv.FormatFloat(*opts.ProgressionCap, 'f', -1, 64))}
 }
 
 // RequiredFile is a file a world reads at generation (a ROM), pointed at by its host.yaml setting.
@@ -970,6 +982,7 @@ func (c *Client) GenerateMultiworld(ctx context.Context, sessionID, seed string,
 		Labels: map[string]string{
 			managedLabel: "false",
 		},
+		Env: generateEnv(opts),
 		HostConfig: sessionHostConfig{
 			Binds:           []string{fmt.Sprintf("archilan_session_%s:/data", sessionID)},
 			NetworkMode:     "none",
