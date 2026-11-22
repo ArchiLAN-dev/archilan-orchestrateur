@@ -215,6 +215,9 @@ type GenerateSessionRequest struct {
 	PlandoOptions []string `json:"plandoOptions,omitempty"` // bosses|items|texts|connections
 	Race          *bool    `json:"race,omitempty"`
 	Spoiler       *int     `json:"spoiler,omitempty"` // 0..3
+	// ProgressionCap: a giant world hosts at most k times its fair share of the others' progression
+	// (story 56.6). Omitted = off. Between 1 (excluded) and 10.
+	ProgressionCap *float64 `json:"progressionCap,omitempty"`
 	// Files a world reads at generation (story 44.2): ids from POST /required-files, consumed here.
 	RequiredFileIDs []string `json:"requiredFileIds,omitempty"`
 }

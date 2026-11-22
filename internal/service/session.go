@@ -39,6 +39,8 @@ type GenerateRequest struct {
 	PlandoOptions []string // subset of: bosses, items, texts, connections
 	Race          *bool    // encrypted race roms + race mode
 	Spoiler       *int     // 0..3
+	// ProgressionCap: k of the cap on hosted progression (story 56.6), nil = off, 1 < k <= 10.
+	ProgressionCap *float64
 	// RequiredFileIDs: staged files this generation consumes (story 44.2).
 	RequiredFileIDs []string
 }
@@ -54,6 +56,9 @@ func validateGenerationOptions(req GenerateRequest) bool {
 		if !validPlandoOptions[p] {
 			return false
 		}
+	}
+	if req.ProgressionCap != nil && (*req.ProgressionCap <= 1 || *req.ProgressionCap > 10) {
+		return false
 	}
 	return req.Spoiler == nil || (*req.Spoiler >= 0 && *req.Spoiler <= 3)
 }
@@ -269,6 +274,8 @@ func (s *Service) runGeneration(req GenerateRequest, tarData *bytes.Buffer, requ
 		Race:          req.Race,
 		Spoiler:       req.Spoiler,
 		RequiredFiles: dockerRequiredFiles(requiredFiles),
+		// Story 56.6: the image's opt-in cap on the progression a giant world hosts.
+		ProgressionCap: req.ProgressionCap,
 	}, tarData)
 	// Store jobID now that we have it (container may already be removed, but useful for audit)
 	if jobID != "" {
