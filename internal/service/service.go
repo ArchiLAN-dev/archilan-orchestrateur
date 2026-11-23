@@ -178,6 +178,7 @@ func (s *Service) UploadApworld(ctx context.Context, data []byte, withPartner bo
 			s.log.Warn("failed to introspect option types", "hash", hash, "err", intrErr)
 			return
 		}
+		typesJSON = s.cleanIntrospection(hash, typesJSON)
 		if storeErr := s.storage.UploadApworldOptionTypes(bgCtx, hash, typesJSON); storeErr != nil {
 			s.log.Warn("failed to store option types", "hash", hash, "err", storeErr)
 		}
@@ -224,7 +225,7 @@ func (s *Service) GetApworldOptionTypes(ctx context.Context, hash string) map[st
 	if s.storage == nil {
 		return nil
 	}
-	raw, found, err := s.storage.DownloadApworldOptionTypes(ctx, hash)
+	raw, found, err := s.downloadIntrospection(ctx, hash)
 	if err != nil || !found {
 		return nil
 	}
@@ -248,7 +249,7 @@ func (s *Service) GetApworldLocations(ctx context.Context, hash string) ([]strin
 	if s.storage == nil {
 		return nil, ErrStorageNotConfigured
 	}
-	raw, found, err := s.storage.DownloadApworldOptionTypes(ctx, hash)
+	raw, found, err := s.downloadIntrospection(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("download introspection %s: %w", hash, err)
 	}
@@ -288,7 +289,7 @@ func (s *Service) GetApworldItems(ctx context.Context, hash string) ApworldItems
 	if s.storage == nil {
 		return empty
 	}
-	raw, found, err := s.storage.DownloadApworldOptionTypes(ctx, hash)
+	raw, found, err := s.downloadIntrospection(ctx, hash)
 	if err != nil || !found {
 		return empty
 	}

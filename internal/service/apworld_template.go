@@ -83,6 +83,7 @@ func (s *Service) ReintrospectApworldOptions(ctx context.Context, hash string) (
 		return nil, fmt.Errorf("reintrospect options: introspection produced an empty result")
 	}
 
+	typesJSON = s.cleanIntrospection(hash, typesJSON)
 	if err := s.storage.UploadApworldOptionTypes(ctx, hash, typesJSON); err != nil {
 		return nil, fmt.Errorf("store introspected options: %w", err)
 	}
