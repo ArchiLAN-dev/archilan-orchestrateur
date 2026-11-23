@@ -38,7 +38,7 @@ func (s *Service) GetApworldDeclaredFiles(ctx context.Context, hash string) []De
 	if s.storage == nil {
 		return []DeclaredFile{}
 	}
-	raw, found, err := s.storage.DownloadApworldOptionTypes(ctx, hash)
+	raw, found, err := s.downloadIntrospection(ctx, hash)
 	if err != nil || !found {
 		return []DeclaredFile{}
 	}
